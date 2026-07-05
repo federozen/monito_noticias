@@ -34,11 +34,13 @@ def scrapear_todo() -> dict:
         for fut in as_completed(futs):
             f = futs[fut]
             try:
-                noticias, error = fut.result()
+                r = fut.result()
+                noticias = r.get("noticias") or []
+                error = r.get("error")
             except Exception as e:
                 noticias, error = [], str(e)
-            resultados[f["id"]] = noticias or []
-            estado = f"{len(noticias or []):3d} notas" if not error else f"ERROR: {error[:60]}"
+            resultados[f["id"]] = noticias
+            estado = f"{len(noticias):3d} notas" if not error else f"ERROR: {str(error)[:60]}"
             print(f"  [{f['id']:<12}] {estado}")
     return resultados
 
