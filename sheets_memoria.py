@@ -202,11 +202,11 @@ def agregar_a_agenda(items: list, origen: str):
             if it.get("nuevo"):
                 mom = "nuevo"
             elif it.get("delta", 0) > 0:
-                mom = f"+{it['delta']}"
+                mom = f"sube +{it['delta']}"
             elif it.get("delta", 0) < 0:
-                mom = str(it["delta"])
+                mom = f"baja {it['delta']}"
             else:
-                mom = "="
+                mom = "estable"
             filas.append([
                 ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M"),
                 it.get("accion", ""), it.get("titulo", "")[:200],
