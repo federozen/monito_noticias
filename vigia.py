@@ -91,6 +91,12 @@ def main():
 
     print("\n2) Tendencias y momentum...")
     tendencias = calcular_tendencias(resultados)
+    if cfg.get("ignorar"):
+        antes = len(tendencias)
+        tendencias = [c for c in tendencias
+                      if not matches_watchlist(c["titulo"], cfg["ignorar"])]
+        if antes - len(tendencias):
+            print(f"   {antes - len(tendencias)} temas descartados por lista 'ignorar'")
     ole = analizar_ole_vs_compecencia_safe(resultados)
     prev = mem.leer_snapshot_anterior() if not simulacro else []
     print(f"   {len(tendencias)} clusters · snapshot anterior: {len(prev)} temas")
@@ -125,6 +131,14 @@ def main():
         nuevos = accionables
     print(f"   {len(accionables)} accionables → {len(nuevos)} nuevos")
 
+    # Memoria y limpieza: SIEMPRE, haya o no avisos nuevos
+    if not simulacro:
+        mem.guardar_snapshot(tendencias, origen="vigia")
+        n_hist = mem.registrar_historial(tendencias)
+        n_arch = mem.archivar_agenda_vieja(cfg.get("dias_archivo", 3))
+        print(f"   memoria: snapshot ok · {n_hist} temas al Historial"
+              + (f" · {n_arch} filas archivadas" if n_arch else ""))
+
     if not nuevos:
         print("\nNada nuevo que avisar. Silencio = todo bajo control.")
         return
@@ -133,7 +147,6 @@ def main():
     if not simulacro:
         n = mem.agregar_a_agenda(nuevos, origen="vigia")
         print(f"   {n} filas agregadas → {mem.url_planilla()}")
-        mem.guardar_snapshot(tendencias, origen="vigia")
     else:
         for it in nuevos:
             print(f"   [{it['accion']:8}] {it['titulo'][:70]}")
