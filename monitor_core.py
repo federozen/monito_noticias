@@ -1560,11 +1560,15 @@ def fetch_og_image(url: str) -> str:
         _IMAGE_CACHE[url] = ""
         return ""
 
+_IMAGE_CACHE = {}  # cache de og:images por URL (vive lo que dure el proceso)
+
+
 def fetch_og_images_batch(noticias: list) -> None:
     """Fetch og:images en paralelo para una lista de noticias. Guarda en _IMAGE_CACHE."""
     urls_sin_cache = [
         n["url"] for n in noticias
         if n.get("url") and n["url"] not in _IMAGE_CACHE
+        and "news.google.com" not in n["url"]  # redirects de Google News: no tienen imagen
     ]
     if not urls_sin_cache:
         return
