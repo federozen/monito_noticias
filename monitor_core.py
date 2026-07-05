@@ -1028,9 +1028,33 @@ def extraer_generico(html: str, fuente: dict) -> list:
 # Google News el feed de ese dominio (site:medio.com). Google ya indexa todos
 # los medios, así que esto autocura fuentes rotas (SPAs, bloqueos, rediseños).
 
-def _gnews_url(dominio: str) -> str:
+# Edición de Google News según el idioma de cada medio: pedirle un sitio
+# italiano a la edición argentina puede devolver 0 resultados.
+GNEWS_LOC = {
+    # italiano
+    "dimarzio": ("it", "IT", "IT:it"), "calciomer": ("it", "IT", "IT:it"),
+    "gazzetta": ("it", "IT", "IT:it"), "corriere": ("it", "IT", "IT:it"),
+    # inglés
+    "guardian": ("en-US", "US", "US:en"), "skysports": ("en-US", "US", "US:en"),
+    "bbc": ("en-US", "US", "US:en"), "cbssport": ("en-US", "US", "US:en"),
+    "goal": ("en-US", "US", "US:en"), "espnint": ("en-US", "US", "US:en"),
+    "sportnews": ("en-US", "US", "US:en"), "fifa": ("en-US", "US", "US:en"),
+    # francés
+    "lequipe": ("fr", "FR", "FR:fr"), "footmercato": ("fr", "FR", "FR:fr"),
+    # portugués
+    "placar": ("pt-BR", "BR", "BR:pt-419"), "globo": ("pt-BR", "BR", "BR:pt-419"),
+    "record": ("pt-PT", "PT", "PT:pt-150"),
+    # español de España
+    "marca": ("es", "ES", "ES:es"), "as": ("es", "ES", "ES:es"),
+    "sport": ("es", "ES", "ES:es"), "mundodep": ("es", "ES", "ES:es"),
+    "relevo": ("es", "ES", "ES:es"),
+}
+
+
+def _gnews_url(dominio: str, fuente_id: str = "") -> str:
+    hl, gl, ceid = GNEWS_LOC.get(fuente_id, ("es-419", "AR", "AR:es-419"))
     return (f"https://news.google.com/rss/search?q=site:{dominio}"
-            f"&hl=es-419&gl=AR&ceid=AR:es-419")
+            f"&hl={hl}&gl={gl}&ceid={ceid}")
 
 
 def _limpiar_titulo_gnews(titulo: str) -> str:
@@ -1055,7 +1079,7 @@ def _fallback_gnews(fuente: dict, motivo_original: str) -> dict:
     if not dominio or "news.google.com" in fuente.get("url", ""):
         return {"id": fuente["id"], "noticias": [], "error": motivo_original}
     try:
-        resp = requests.get(_gnews_url(dominio), headers=HEADERS, timeout=15)
+        resp = requests.get(_gnews_url(dominio, fuente.get("id", "")), headers=HEADERS, timeout=15)
         resp.raise_for_status()
         noticias = extraer_rss(resp.text)
         for n in noticias:
