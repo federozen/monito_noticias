@@ -56,6 +56,12 @@ FUENTES_INT = [
     {"id": "skysports",  "nombre": "Sky Sports",       "url": "https://www.skysports.com/rss/12040",             "color": "#0072c9", "es_rss": True},
     {"id": "dimarzio",   "nombre": "Di Marzio",        "url": "https://www.gianlucadimarzio.com/it/rss",         "color": "#0a3d62", "es_rss": True},
     {"id": "calciomer",  "nombre": "Calciomercato",    "url": "https://www.calciomercato.com/rss",               "color": "#c8102e", "es_rss": True},
+
+    # ── Vía Google News directo (para medios sin RSS propio confiable) ──
+    {"id": "tntsports",  "nombre": "TNT Sports AR",    "url": "https://news.google.com/rss/search?q=site:tntsports.com.ar&hl=es-419&gl=AR&ceid=AR:es-419",  "color": "#e4002b", "es_rss": True},
+    {"id": "relevo",     "nombre": "Relevo",           "url": "https://news.google.com/rss/search?q=site:relevo.com&hl=es-419&gl=AR&ceid=AR:es-419",         "color": "#ff3c00", "es_rss": True},
+    {"id": "footmercato","nombre": "Foot Mercato",     "url": "https://news.google.com/rss/search?q=site:footmercato.net&hl=es-419&gl=AR&ceid=AR:es-419",    "color": "#0a5c36", "es_rss": True},
+    {"id": "fabrizio",   "nombre": "Fabrizio Romano",  "url": "https://news.google.com/rss/search?q=%22Fabrizio%20Romano%22%20fichaje%20OR%20transfer&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#1a1a2e", "es_rss": True},
 ]
 
 TODAS_FUENTES = FUENTES_NAC + FUENTES_INT
@@ -1017,6 +1023,51 @@ def extraer_generico(html: str, fuente: dict) -> list:
 
     return noticias[:MAX_ITEMS]
 
+# ─── FALLBACK UNIVERSAL: GOOGLE NEWS RSS ─────────────────────────────────────
+# Si el scraping directo de una fuente falla o trae 0 notas, se le pide a
+# Google News el feed de ese dominio (site:medio.com). Google ya indexa todos
+# los medios, así que esto autocura fuentes rotas (SPAs, bloqueos, rediseños).
+
+def _gnews_url(dominio: str) -> str:
+    return (f"https://news.google.com/rss/search?q=site:{dominio}"
+            f"&hl=es-419&gl=AR&ceid=AR:es-419")
+
+
+def _limpiar_titulo_gnews(titulo: str) -> str:
+    """Google News agrega ' - Nombre del Medio' al final de cada título."""
+    if " - " in titulo:
+        base = titulo.rsplit(" - ", 1)[0].strip()
+        if len(base) >= 15:
+            return base
+    return titulo
+
+
+def _dominio_de(fuente: dict) -> str:
+    if fuente.get("gnews"):
+        return fuente["gnews"]
+    url = fuente.get("url", "")
+    m = re.search(r"https?://(?:www\.)?([^/]+)", url)
+    return m.group(1) if m else ""
+
+
+def _fallback_gnews(fuente: dict, motivo_original: str) -> dict:
+    dominio = _dominio_de(fuente)
+    if not dominio or "news.google.com" in fuente.get("url", ""):
+        return {"id": fuente["id"], "noticias": [], "error": motivo_original}
+    try:
+        resp = requests.get(_gnews_url(dominio), headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        noticias = extraer_rss(resp.text)
+        for n in noticias:
+            n["titulo"] = _limpiar_titulo_gnews(n["titulo"])
+        if noticias:
+            return {"id": fuente["id"], "noticias": noticias[:MAX_ITEMS],
+                    "error": None, "via": "gnews"}
+    except Exception:
+        pass
+    return {"id": fuente["id"], "noticias": [], "error": motivo_original}
+
+
 def fetch_fuente(fuente: dict) -> dict:
     try:
         resp = requests.get(fuente["url"], headers=HEADERS, timeout=15)
@@ -1045,9 +1096,11 @@ def fetch_fuente(fuente: dict) -> dict:
                 encoding = "utf-8" if detected in ("ascii", "") else detected
         resp.encoding = encoding
         noticias = extraer_generico(resp.text, fuente)
-        return {"id": fuente["id"], "noticias": noticias, "error": None}
+        if noticias:
+            return {"id": fuente["id"], "noticias": noticias, "error": None}
+        return _fallback_gnews(fuente, "scraping directo: 0 notas")
     except Exception as e:
-        return {"id": fuente["id"], "noticias": [], "error": str(e)}
+        return _fallback_gnews(fuente, str(e))
 
 # ─── IA — CLAUDE ──────────────────────────────────────────────────────────────
 def call_claude(prompt: str, api_key: str, max_tokens: int = 2000) -> str:
