@@ -30,6 +30,14 @@ FUENTES_NAC = [
     {"id": "lavoz",         "nombre": "La Voz",         "url": "https://www.lavoz.com.ar/deportes/",                  "color": "#8b0000"},
     {"id": "capital",       "nombre": "La Capital",     "url": "https://www.lacapital.com.ar/secciones/ovacion.html", "color": "#6a0d8a"},
     {"id": "na",            "nombre": "Noticias Arg.",  "url": "https://noticiasargentinas.com/search?category=65552a2ae38b1d41233b1aac", "color": "#c00060"},
+
+    # ── Nuevas nacionales (vía Google News) ──
+    {"id": "cuatro42",   "nombre": "442",              "url": "https://news.google.com/rss/search?q=site:442.perfil.com&hl=es-419&gl=AR&ceid=AR:es-419",                       "color": "#7b2d8b", "es_rss": True},
+    {"id": "cielosports","nombre": "Cielosports",      "url": "https://news.google.com/rss/search?q=site:cielosports.com&hl=es-419&gl=AR&ceid=AR:es-419",                      "color": "#0090d0", "es_rss": True},
+    {"id": "popular",    "nombre": "Diario Popular",   "url": "https://news.google.com/rss/search?q=site:diariopopular.com.ar%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",        "color": "#d32f2f", "es_rss": True},
+    {"id": "ambito",     "nombre": "Ámbito Deportes",  "url": "https://news.google.com/rss/search?q=site:ambito.com%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",                  "color": "#00594e", "es_rss": True},
+    {"id": "afa",        "nombre": "AFA (oficial)",    "url": "https://news.google.com/rss/search?q=site:afa.com.ar&hl=es-419&gl=AR&ceid=AR:es-419",                           "color": "#6cace4", "es_rss": True},
+    {"id": "radar_ar",   "nombre": "Radar AR",         "url": "https://news.google.com/rss/search?q=%22f%C3%BAtbol%20argentino%22&hl=es-419&gl=AR&ceid=AR:es-419",             "color": "#444444", "es_rss": True},
 ]
 
 FUENTES_INT = [
@@ -38,7 +46,6 @@ FUENTES_INT = [
     {"id": "mundodep",  "nombre": "Mundo Deportivo",  "url": "https://www.mundodeportivo.com/",                 "color": "#1565c0"},
     {"id": "sport",     "nombre": "Sport",            "url": "https://www.sport.es/es/",                        "color": "#cc0020"},
     {"id": "globo",     "nombre": "Globoesporte",     "url": "https://ge.globo.com/",                           "color": "#007a2f"},
-    {"id": "placar",    "nombre": "Placar",           "url": "https://placar.com.br/feed/",                     "color": "#c00040", "es_rss": True},
     {"id": "gazzetta",  "nombre": "Gazzetta Sport",   "url": "https://www.gazzetta.it/Calcio/",                 "color": "#e8000a"},
     {"id": "corriere",  "nombre": "Corriere Sport",   "url": "https://www.corrieredellosport.it/calcio",        "color": "#e06000"},
     {"id": "record",    "nombre": "Record PT",        "url": "https://www.record.pt/futebol/",                  "color": "#c8000a"},
@@ -62,6 +69,13 @@ FUENTES_INT = [
     {"id": "relevo",     "nombre": "Relevo",           "url": "https://news.google.com/rss/search?q=site:relevo.com&hl=es-419&gl=AR&ceid=AR:es-419",         "color": "#ff3c00", "es_rss": True},
     {"id": "footmercato","nombre": "Foot Mercato",     "url": "https://news.google.com/rss/search?q=site:footmercato.net&hl=es-419&gl=AR&ceid=AR:es-419",    "color": "#0a5c36", "es_rss": True},
     {"id": "fabrizio",   "nombre": "Fabrizio Romano",  "url": "https://news.google.com/rss/search?q=%22Fabrizio%20Romano%22%20fichaje%20OR%20transfer&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#1a1a2e", "es_rss": True},
+
+    # ── Nuevas internacionales: medios + instituciones ──
+    {"id": "kicker",     "nombre": "Kicker (DE)",      "url": "https://news.google.com/rss/search?q=site:kicker.de&hl=de&gl=DE&ceid=DE:de",                                    "color": "#c00d0d", "es_rss": True},
+    {"id": "athletic",   "nombre": "The Athletic",     "url": "https://news.google.com/rss/search?q=site:nytimes.com/athletic%20football&hl=en-US&gl=US&ceid=US:en",           "color": "#00292f", "es_rss": True},
+    {"id": "ovacion",    "nombre": "Ovación (UY)",     "url": "https://news.google.com/rss/search?q=site:elpais.com.uy%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",               "color": "#75aadb", "es_rss": True},
+    {"id": "conmebol",   "nombre": "CONMEBOL",         "url": "https://news.google.com/rss/search?q=site:conmebol.com&hl=es-419&gl=AR&ceid=AR:es-419",                         "color": "#002b5c", "es_rss": True},
+    {"id": "uefa",       "nombre": "UEFA",             "url": "https://news.google.com/rss/search?q=site:uefa.com&hl=es-419&gl=AR&ceid=AR:es-419",                             "color": "#00004b", "es_rss": True},
 ]
 
 TODAS_FUENTES = FUENTES_NAC + FUENTES_INT
@@ -1042,7 +1056,7 @@ GNEWS_LOC = {
     # francés
     "lequipe": ("fr", "FR", "FR:fr"), "footmercato": ("fr", "FR", "FR:fr"),
     # portugués
-    "placar": ("pt-BR", "BR", "BR:pt-419"), "globo": ("pt-BR", "BR", "BR:pt-419"),
+    "globo": ("pt-BR", "BR", "BR:pt-419"),
     "record": ("pt-PT", "PT", "PT:pt-150"),
     # español de España
     "marca": ("es", "ES", "ES:es"), "as": ("es", "ES", "ES:es"),
