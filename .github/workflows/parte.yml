@@ -1,0 +1,25 @@
+name: Parte de la mañana
+
+on:
+  schedule:
+    - cron: "30 10 * * *"    # todos los días 7:30 hora argentina
+  workflow_dispatch: {}       # botón para generarlo a mano
+
+jobs:
+  parte:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-vigia.txt
+      - name: Generar parte
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python parte.py
