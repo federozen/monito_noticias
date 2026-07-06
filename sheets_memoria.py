@@ -32,6 +32,7 @@ AGENDA_HEADERS = ["Fecha", "Hora", "Accion", "Tema", "Medios", "Momentum",
 SNAPSHOT_HEADERS = ["RunTS", "Origen", "Titulo", "CantMedios", "TieneOle"]
 HISTORIAL_HEADERS = ["Fecha", "Hora", "Titulo", "CantMedios", "TieneOle"]
 INFORMES_HEADERS = ["Fecha", "Periodo", "Informe"]
+COBERTURA_HEADERS = ["Fecha", "Hora", "Titulo", "URL"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -40,6 +41,9 @@ CONFIG_DEFAULTS = [
     ["dias_archivo", "3", "Mover a la pestaña Archivo las filas de Agenda más viejas que esto"],
     ["ignorar", "", "Temas a no mostrar nunca (keywords separadas por coma, ej: tenis, nba)"],
     ["criterios_editor", "", "Tus criterios editoriales, en tu idioma; la IA los respeta en el parte, los briefs y el informe"],
+    ["digest_ole", "si", "Mandar por Telegram (silencioso) las notas nuevas de Olé en cada corrida: si / no"],
+    ["avisos_explosion", "si", "Alertar por Telegram cuando un tema explota en velocidad: si / no"],
+    ["umbral_explosion", "4", "Cuántos medios tiene que sumar un tema en una hora para considerarse explosión"],
 ]
 
 _conf = {"json": None, "sheet_id": None}
@@ -99,7 +103,8 @@ def asegurar_estructura():
 def leer_config() -> dict:
     """Devuelve la config del Sheet con defaults sanos si algo falta."""
     cfg = {"umbral_medios": 4, "watchlist": [], "horas_silencio": 48,
-           "dias_archivo": 3, "ignorar": [], "criterios": ""}
+           "dias_archivo": 3, "ignorar": [], "criterios": "",
+           "digest_ole": True, "avisos_explosion": True, "umbral_explosion": 4}
     try:
         ws = _ws("Config", CONFIG_DEFAULTS[0], defaults=CONFIG_DEFAULTS)
         filas = ws.get_all_values()
@@ -123,6 +128,12 @@ def leer_config() -> dict:
                 cfg["_formato_v"] = v
             elif k == "criterios_editor":
                 cfg["criterios"] = v
+            elif k == "digest_ole":
+                cfg["digest_ole"] = v.lower().startswith("s")
+            elif k == "avisos_explosion":
+                cfg["avisos_explosion"] = v.lower().startswith("s")
+            elif k == "umbral_explosion" and v.isdigit():
+                cfg["umbral_explosion"] = int(v)
         # auto-agregar al Sheet los parámetros nuevos que falten (updates del sistema)
         for fila_def in CONFIG_DEFAULTS[1:]:
             if fila_def[0] not in vistos:
@@ -341,11 +352,12 @@ def guardar_informe(texto: str, periodo: str):
 
 
 # ── Formato del tablero (se aplica una sola vez, versionado en Config) ──────
-FORMATO_VERSION = "3"
+FORMATO_VERSION = "4"
 
 _COLORES_ACCION = {
     "SUBIR YA":  {"red": 0.98, "green": 0.88, "blue": 0.87},
     "RETOMAR":   {"red": 0.93, "green": 0.88, "blue": 0.96},
+    "EXPLOTA":   {"red": 1.00, "green": 0.91, "blue": 0.82},
     "REDACTAR":  {"red": 1.00, "green": 0.95, "blue": 0.80},
     "SEGUIR":    {"red": 0.87, "green": 0.92, "blue": 0.97},
     "EMPUJAR":   {"red": 0.88, "green": 0.96, "blue": 0.89},
@@ -444,6 +456,53 @@ def limpiar_historial(dias: int = 30, umbral_filas: int = 3000) -> int:
         return borradas
     except Exception:
         return 0
+
+
+def registrar_cobertura_ole(notas: list) -> list:
+    """Suma a la pestaña 'Cobertura Olé' las notas que aún no estaban
+    (dedup por título). Devuelve la lista de títulos NUEVOS de esta corrida."""
+    try:
+        ws = _ws("Cobertura Olé", COBERTURA_HEADERS)
+        existentes = {f[2] for f in ws.get_all_values()[1:] if len(f) >= 3}
+        ahora = datetime.now(_TZ_AR)
+        nuevas, filas = [], []
+        for n in notas:
+            t = (n.get("titulo") or "").strip()[:200]
+            if not t or t in existentes:
+                continue
+            existentes.add(t)
+            nuevas.append(t)
+            filas.append([ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M"),
+                          t, n.get("url") or ""])
+        if filas:
+            ws.append_rows(filas, value_input_option="USER_ENTERED")
+        # poda: si engordó, conservar solo los últimos 7 días
+        todas = ws.get_all_values()
+        if len(todas) > 2500:
+            limite = ahora - timedelta(days=7)
+            quedan = [f for f in todas[1:]
+                      if (_parse_fecha(f[0]) or ahora) >= limite]
+            ws.clear()
+            ws.update(range_name="A1", values=[COBERTURA_HEADERS] + quedan,
+                      value_input_option="USER_ENTERED")
+        return nuevas
+    except Exception:
+        return []
+
+
+def titulos_cobertura_ole(dias: int = 5) -> list:
+    """Lo publicado por Olé en los últimos N días según la pestaña
+    'Cobertura Olé'. Formato: [{titulo, fecha}, ...]."""
+    out = []
+    try:
+        ws = _ws("Cobertura Olé", COBERTURA_HEADERS)
+        limite = datetime.now(_TZ_AR) - timedelta(days=dias)
+        for f in ws.get_all_values()[1:]:
+            if len(f) >= 3 and (_parse_fecha(f[0]) or datetime.now(_TZ_AR)) >= limite:
+                out.append({"titulo": f[2], "fecha": f[0]})
+    except Exception:
+        pass
+    return out
 
 
 def filas_pendientes_agenda() -> list:
