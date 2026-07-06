@@ -271,6 +271,25 @@ def bloque_criterios() -> str:
     return ""
 
 
+PASES_KEYWORDS = [
+    "fichaje", "fichajes", "ficha a", "pase de", "el pase", "refuerzo", "refuerzos",
+    "transfer", "mercado de pases", "oferta por", "oferta de", "ofertas",
+    "prestamo", "préstamo", "cedido", "cesion", "cesión", "clausula", "cláusula",
+    "acuerdo por", "acuerdo con", "cerro la llegada", "cerró la llegada",
+    "llegada de", "arribo de", "incorpora", "incorporacion", "incorporación",
+    "negocia por", "negociacion por", "negociación por", "here we go",
+    "se va de", "deja el club", "rescision", "rescisión", "renovacion", "renovación",
+    "renueva", "firma con", "firmó con", "firmo con", "nuevo club", "vendido a",
+    "venta de", "traspaso", "quiere contratar", "suena en", "en la mira de",
+    "pretendido por", "interesa a", "va por", "ofrecieron",
+]
+
+
+def es_tema_de_pases(titulo: str) -> bool:
+    t = titulo.lower()
+    return any(k in t for k in PASES_KEYWORDS)
+
+
 def solapamiento(a: set, b: set) -> float:
     """Coeficiente de solapamiento: intersección / el más chico de los dos.
     Mejor que Jaccard cuando un título es corto y creativo y el otro largo
@@ -1315,69 +1334,111 @@ def call_claude(prompt: str, api_key: str, max_tokens: int = 2000) -> str:
     partes = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
     return "\n".join(partes).strip()
 
+PERLITA_KEYWORDS = [
+    "insolito", "insólito", "viral", "furor", "locura", "increible", "increíble",
+    "inedito", "inédito", "record", "récord", "historico", "histórico", "blooper",
+    "papelon", "papelón", "escandalo", "escándalo", "polemica", "polémica",
+    "sorpresa", "sorprend", "curios", "emotivo", "conmovedor", "gesto de",
+    "no lo vio nadie", "nunca visto", "por primera vez", "el más", "la más",
+    "wtf", "video:", "el video", "la foto", "se volvio", "se volvió",
+    "estallo", "estalló", "explotaron", "memes", "reaccion", "reacción",
+]
+
+
+def candidatas_perlitas(resultados: dict, max_items: int = 30) -> list:
+    """Barre todos los titulares buscando señales de perlita (viral, insólito,
+    récord, blooper...). Devuelve [(nombre_fuente, titulo), ...] dedupeado."""
+    out, vistos = [], set()
+    for f in TODAS_FUENTES:
+        for n in resultados.get(f["id"], []):
+            t = n.get("titulo", "")
+            tl = t.lower()
+            if not any(k in tl for k in PERLITA_KEYWORDS):
+                continue
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            out.append((f["nombre"], t[:150]))
+            if len(out) >= max_items:
+                return out
+    return out
+
+
 def prompt_analisis_general(resultados: dict) -> str:
-    bloque = "\n\n".join(
-        f"### {f['nombre']}\n" + "\n".join(
-            f"  • {n['titulo']}"
-            for n in resultados.get(f["id"], [])[:25]
-        ) or "  (sin datos)"
-        for f in TODAS_FUENTES
+    tendencias = calcular_tendencias(resultados)[:30]
+    perlitas = candidatas_perlitas(resultados)
+    bloque_perlitas = "\n".join(f"  • [{f}] {t}" for f, t in perlitas) or "  (ninguna detectada en esta pasada)"
+    lineas = "\n".join(
+        f"{i+1}. {c['titulo'][:130]} — {c['cant_medios']} medios "
+        f"({c.get('nac', 0)} nac / {c.get('intl', 0)} int) · Olé: {'sí' if c.get('tiene_ole') else 'NO'}"
+        for i, c in enumerate(tendencias)
     )
-    return f"""Sos editor jefe de un portal deportivo argentino. Analizá estos titulares de {len(TODAS_FUENTES)} medios deportivos y respondé en español rioplatense:
+    return f"""Sos editor jefe de un portal deportivo argentino. Abajo están los 30 temas
+que más medios están cubriendo AHORA (de {len(TODAS_FUENTES)} medios monitoreados),
+ya agrupados y ordenados por volumen.{bloque_criterios()}
 
-1. AGENDA DEL MOMENTO — 4 oraciones sobre qué temas dominan ahora.
-2. TEMAS CON MAYOR VOLUMEN — Los 5 temas que más medios cubren simultáneamente.
-3. OPORTUNIDADES EDITORIALES — 3 ideas de notas que nadie cubre bien pero tienen potencial.
-4. DIFERENCIAS NACIONALES vs INTERNACIONALES — Qué cubren los medios españoles/brasileños/ingleses que los argentinos ignoran, y viceversa.
+Escribí un RESUMEN EJECUTIVO en español rioplatense, directo:
 
-Separar secciones con ───────. Sé directo y accionable.
+LECTURA GENERAL — 3 líneas: qué domina la conversación y qué tono tiene el día.
 
-{bloque}"""
+LOS 30 TEMAS, agrupados por eje (Selección / mercado de pases / torneo local /
+fútbol internacional / otros). Por cada tema, UNA sola línea: qué pasó y por qué
+importa para el hincha argentino. No repitas el título textual: interpretalo.
+Marcá con ⚠️ los temas donde Olé no tiene cobertura.
+
+DATO SALIENTE — 1 línea: la asimetría o el patrón más llamativo del panorama.
+
+PERLITAS — 3 a 5 joyitas con potencial de tráfico: lo viral, lo insólito, la
+sorpresa, el gesto, el récord raro. Elegilas de la canasta de candidatas (y del
+top 30 si alguna califica). Por cada una: por qué puede rendir en una línea +
+un título con gancho. Si una candidata es puro clickbait sin sustancia, salteala.
+
+TEMAS:
+{lineas}
+
+CANDIDATAS A PERLITA (detectadas por señales de viralidad/rareza):
+{bloque_perlitas}"""
 
 def prompt_informe_ole(resultados: dict, analisis: dict) -> str:
-    exclusivos = analisis["exclusivos_ole"]
-    faltantes = analisis["faltantes_en_ole"]
-    compartidos = analisis["cubiertos_por_ambos"]
+    tendencias = calcular_tendencias(resultados)
+    top = tendencias[:10]
+    faltantes = analisis.get("faltantes_en_ole", [])[:15]
+    bloque_top = "\n\n".join(
+        f"TEMA {i+1}: {c['titulo'][:130]} ({c['cant_medios']} medios · Olé: {'sí' if c.get('tiene_ole') else 'NO'})\n"
+        + "\n".join(f"   · [{n['fuente']['nombre']}] {n['noticia']['titulo'][:110]}"
+                     for n in c.get("noticias", [])[:5])
+        for i, c in enumerate(top)
+    )
+    bloque_falt = "\n".join(f"  • [{f['fuente_nombre']}] {f['titulo'][:120]}"
+                             for f in faltantes) or "  (ninguno)"
+    return f"""Sos editor de Olé. No generes noticias descriptivas: para cada hecho
+detectá patrones, conflictos, consecuencias, cambios de estatus, héroes
+inesperados, paradojas e impacto emocional en el hincha. Competí por el
+significado antes que por la información.
 
-    bloque_excl = "\n".join(f"  • {n['titulo']}" for n in exclusivos[:30]) or "  (ninguno)"
-    bloque_falt = "\n".join(f"  • [{f['fuente_nombre']}] {f['titulo']}" for f in faltantes[:40]) or "  (ninguno)"
-    bloque_comp = "\n\n".join(
-        f"  • OLÉ: \"{c['noticia_ole']['titulo']}\"\n" +
-        "\n".join(
-            f"    → [{TODAS_FUENTES[[x['id'] for x in TODAS_FUENTES].index(comp['fuente_id'])]['nombre'] if comp['fuente_id'] in [x['id'] for x in TODAS_FUENTES] else comp['fuente_id']}] {comp['noticia']['titulo']}"
-            for comp in c["competencia"]
-        )
-        for c in compartidos[:20]
-    ) or "  (ninguno)"
+{FRAMEWORK_ANGULOS}{bloque_criterios()}
 
-    return f"""Sos editor jefe de Olé. Tenés un análisis semántico automático que agrupó noticias por TEMA (no por título exacto).
+Abajo tenés los 10 temas más calientes (con cómo tituló cada medio) y los
+huecos donde Olé no entró. Escribí en español rioplatense:
 
-⚠️ Si un tema figura en "FALTANTES", es porque verdaderamente no está en Olé.
+FOCOS SUGERIDOS — Elegí los 6 temas con más potencial. Por cada uno:
+  • El tema en una línea y qué nivel de lectura manda (qué cambió / a quién
+    afecta / qué emoción genera / qué patrón revela / qué consecuencia deja).
+  • AL MENOS CINCO ÁNGULOS DISTINTOS del framework, cada uno con su título
+    sugerido. Nombrá el tipo de ángulo. Evitá los que ya usó la competencia
+    (sus títulos están a la vista).
+  • Tu recomendación: cuál de los cinco es EL ángulo, y por qué.
 
-─────────────────────────────────────────────────────
-## EXCLUSIVOS DE OLÉ ({len(exclusivos)} temas):
-{bloque_excl}
+HUECOS RÁPIDOS — De la lista de faltantes, marcá los 3 que valen la pena y el
+ángulo de entrada en una línea; ignorá el resto.
 
-─────────────────────────────────────────────────────
-## FALTANTES EN OLÉ ({len(faltantes)} temas):
-{bloque_falt}
+TOP 10 TEMAS:
+{bloque_top}
 
-─────────────────────────────────────────────────────
-## TEMAS COMPARTIDOS CON ÁNGULO DIFERENTE:
-{bloque_comp}
-─────────────────────────────────────────────────────
+FALTANTES EN OLÉ:
+{bloque_falt}"""
 
-Generá un informe editorial en español rioplatense:
-
-1. 🟢 DONDE OLÉ ESTÁ ADELANTE — 5 exclusivos más valiosos.
-2. 🔴 LO QUE OLÉ NO DIO — TOP 5 urgentes con título sugerido y ángulo para Argentina.
-3. 🔵 MISMO TEMA, MEJOR ÁNGULO — 3 casos donde la competencia lo enfocó mejor.
-4. ⚡ ALERTAS INTERNACIONALES — Top 3 noticias europeas/brasileñas con potencial para Olé.
-5. 📋 PLAN EDITORIAL — 4 acciones prioritarias para las próximas 3 horas.
-
-Separar secciones con ───────. Sé muy específico y accionable."""
-
-# ─── SCRAPING DE CUERPO DE NOTA ──────────────────────────────────────────────
 def _extraer_cuerpo_nota(url: str, max_chars: int = 900) -> str:
     """Intenta extraer los primeros párrafos del cuerpo de una nota. Retorna '' si falla.
     Limitado a 900 chars por nota para controlar el gasto de tokens de entrada."""
@@ -1517,8 +1578,19 @@ def prompt_nota_rapida(tema: str, titulares_enriquecidos: list, estilo: str, tip
         ),
     }
 
+    instruccion_angulo = f"""ANTES DE ESCRIBIR — el método (obligatorio, no lo saltees):
+Identificá en silencio los 6 niveles de lectura del hecho: qué pasó, qué cambió,
+a quién afecta, qué emoción genera, qué tendencia o patrón revela y qué
+consecuencia deja. Después elegí UN ángulo del framework de Olé (cambio de
+estatus, patrón, consecuencia, héroe inesperado, conflicto, paradoja, identidad,
+tendencia, qué significa, el día después) y construí TODA la nota alrededor de
+ese ángulo: el título compite por el significado, no por la información; el
+primer párrafo instala el ángulo, no la crónica.{bloque_criterios()}
+
+"""
+
     if tiene_info_real:
-        instruccion_alucinacion = """⚠️ REGLAS ANTI-ALUCINACIÓN (CRÍTICAS — leelas antes de escribir una sola palabra):
+        instruccion_alucinacion = instruccion_angulo + """⚠️ REGLAS ANTI-ALUCINACIÓN (CRÍTICAS — leelas antes de escribir una sola palabra):
 - Usá ÚNICAMENTE datos, cifras, citas y hechos que aparezcan textualmente en las FUENTES de abajo.
 - Prohibido agregar contexto histórico, estadísticas o antecedentes que no estén en los textos.
 - Las citas entre comillas SOLO pueden ser frases que aparezcan literalmente en los textos fuente.
@@ -1549,7 +1621,7 @@ Ejemplo de fila:
 ════════════════════════════════════
 ÁNGULOS ALTERNATIVOS
 ════════════════════════════════════
-2 enfoques distintos para trabajar la nota, con título sugerido para cada uno.
+3 enfoques distintos del framework (nombrá el tipo de ángulo), con título sugerido para cada uno.
 """
 
         bloque_fuentes = f"""=== FUENTES CON TEXTO COMPLETO ({len(con_cuerpo)}) — de estas podés extraer datos ===
@@ -1560,7 +1632,7 @@ Ejemplo de fila:
 === FUENTES SOLO CON TITULAR ({len(solo_titulo)}) — NO inferir datos, solo confirmar que el tema existe ===
 {bloque_titulares}"""
     else:
-        instruccion_alucinacion = """⚠️ MODO ESQUELETO SEGURO — no se pudo leer el cuerpo de ninguna nota.
+        instruccion_alucinacion = instruccion_angulo + """⚠️ MODO ESQUELETO SEGURO — no se pudo leer el cuerpo de ninguna nota.
 No redactes la nota. En cambio, seguí el formato de respuesta obligatorio de abajo."""
 
         instruccion_formato = """

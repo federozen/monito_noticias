@@ -33,6 +33,7 @@ SNAPSHOT_HEADERS = ["RunTS", "Origen", "Titulo", "CantMedios", "TieneOle"]
 HISTORIAL_HEADERS = ["Fecha", "Hora", "Titulo", "CantMedios", "TieneOle"]
 INFORMES_HEADERS = ["Fecha", "Periodo", "Informe"]
 COBERTURA_HEADERS = ["Fecha", "Hora", "Titulo", "URL"]
+PASES_HEADERS = ["PrimeraVez", "UltimaVez", "Titulo", "MediosMax", "Apariciones", "Olé", "URL", "Clave"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -257,7 +258,8 @@ def agregar_a_agenda(items: list, origen: str):
                 it.get("motivo", "")[:150], it.get("url") or "",
                 "pendiente", origen, it.get("clave", ""),
             ])
-        ws.append_rows(filas, value_input_option="USER_ENTERED")
+        # insertar arriba: lo más nuevo siempre primero
+        ws.insert_rows(filas, row=2, value_input_option="USER_ENTERED")
         return len(filas)
     except Exception:
         return 0
@@ -503,6 +505,59 @@ def titulos_cobertura_ole(dias: int = 5) -> list:
     except Exception:
         pass
     return out
+
+
+def registrar_pases(temas: list) -> tuple:
+    """Upsert en la pestaña 'Pases': cada operación de mercado es UNA fila que
+    se actualiza cuando reaparece (última vez, pico de medios, apariciones).
+    temas: [{titulo, cant_medios, tiene_ole, url, clave}]. Devuelve (nuevas, actualizadas)."""
+    if not temas:
+        return (0, 0)
+    try:
+        ws = _ws("Pases", PASES_HEADERS)
+        filas = ws.get_all_values()
+        por_clave = {f[7]: (i, f) for i, f in enumerate(filas[1:], start=2)
+                     if len(f) >= 8 and f[7]}
+        ahora = datetime.now(_TZ_AR)
+        hoy, hora = ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M")
+        nuevas, celdas = [], []
+        for t in temas:
+            clave = t.get("clave", "")
+            if not clave:
+                continue
+            if clave in por_clave:
+                nro, f = por_clave[clave]
+                medios_max = max(int(f[3]) if str(f[3]).isdigit() else 1,
+                                 t.get("cant_medios", 1))
+                apar = (int(f[4]) if str(f[4]).isdigit() else 1) + 1
+                ole = "sí" if (f[5] == "sí" or t.get("tiene_ole")) else "no"
+                celdas += [gspread.Cell(nro, 2, f"{hoy} {hora}"),
+                           gspread.Cell(nro, 3, t.get("titulo", "")[:200]),
+                           gspread.Cell(nro, 4, str(medios_max)),
+                           gspread.Cell(nro, 5, str(apar)),
+                           gspread.Cell(nro, 6, ole)]
+            else:
+                nuevas.append([f"{hoy} {hora}", f"{hoy} {hora}",
+                               t.get("titulo", "")[:200],
+                               str(t.get("cant_medios", 1)), "1",
+                               "sí" if t.get("tiene_ole") else "no",
+                               t.get("url") or "", clave])
+        if celdas:
+            ws.update_cells(celdas)
+        if nuevas:
+            ws.insert_rows(nuevas, row=2, value_input_option="USER_ENTERED")
+        # poda: operaciones sin movimiento hace 45 días
+        todas = ws.get_all_values()
+        if len(todas) > 1500:
+            limite = ahora - timedelta(days=45)
+            quedan = [f for f in todas[1:]
+                      if (_parse_fecha(f[1].split()[0] if f[1] else "") or ahora) >= limite]
+            ws.clear()
+            ws.update(range_name="A1", values=[PASES_HEADERS] + quedan,
+                      value_input_option="USER_ENTERED")
+        return (len(nuevas), len(celdas) // 5)
+    except Exception:
+        return (0, 0)
 
 
 def filas_pendientes_agenda() -> list:

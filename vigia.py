@@ -21,7 +21,7 @@ from monitor_core import (
     TODAS_FUENTES, fetch_fuente, calcular_tendencias,
     analizar_ole_vs_compecencia_safe, construir_agenda, normalizar_titulo,
     fetch_cobertura_ole_gnews, fetch_ultimas_ole, coincide_cobertura,
-    calcular_momentum,
+    calcular_momentum, es_tema_de_pases,
 )
 import sheets_memoria as mem
 
@@ -79,7 +79,7 @@ def enviar_telegram(texto: str, html: bool = True, silencioso: bool = False) -> 
 
 def main():
     simulacro = not mem.disponible()
-    print("=== VIGÍA v6 · últimas de Olé al minuto ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
+    print("=== VIGÍA v7 · tracker de pases ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
 
     cfg = mem.leer_config() if not simulacro else {
         "umbral_medios": 4, "watchlist": [], "horas_silencio": 48}
@@ -134,6 +134,16 @@ def main():
                 "cant_medios": c["cant_medios"], "delta": 0, "nuevo": False,
                 "clave": clave_tema(c["titulo"]),
             })
+
+    # Tracker de pases: toda operación de mercado va a su pestaña con línea de tiempo
+    if not simulacro:
+        temas_pases = [{"titulo": c["titulo"], "cant_medios": c["cant_medios"],
+                        "tiene_ole": c.get("tiene_ole"), "url": c.get("url"),
+                        "clave": clave_tema(c["titulo"])}
+                       for c in tendencias if es_tema_de_pases(c["titulo"])]
+        n_new, n_upd = mem.registrar_pases(temas_pases)
+        print(f"   pases: {len(temas_pases)} operaciones en el panorama → "
+              f"{n_new} nuevas · {n_upd} actualizadas en la pestaña")
 
     # EXPLOTA: saltos de velocidad, incluso en temas que Olé ya tiene
     if cfg.get("avisos_explosion", True) and prev:
