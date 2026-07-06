@@ -12,7 +12,8 @@ Necesita: los mismos secrets del vigía + ANTHROPIC_API_KEY.
 import os
 import sys
 
-from monitor_core import normalizar_titulo, similitud_jaccard, call_claude
+import monitor_core
+from monitor_core import normalizar_titulo, similitud_jaccard, call_claude, bloque_criterios
 import sheets_memoria as mem
 from vigia import enviar_telegram
 
@@ -76,6 +77,8 @@ relleno, con estas secciones:
 5. RECOMENDACIONES — 5 acciones concretas para la semana que arranca, en orden
    de prioridad, cada una con su ángulo.
 
+{bloque_criterios()}
+
 REGISTRO:
 {lineas}"""
 
@@ -89,6 +92,7 @@ def main():
         print("Falta el secret ANTHROPIC_API_KEY en GitHub. Abortando.")
         sys.exit(1)
 
+    monitor_core.CRITERIOS_EDITOR = mem.leer_config().get("criterios", "")
     print(f"1) Leyendo Historial de los últimos {DIAS} días...")
     historial = mem.leer_historial(DIAS)
     print(f"   {len(historial)} registros")

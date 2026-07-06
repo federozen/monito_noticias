@@ -242,6 +242,45 @@ def calcular_tendencias(resultados: dict) -> list:
         for c in clusters
     ]
 
+
+# ─── FRAMEWORK EDITORIAL: LOS 10 ÁNGULOS ─────────────────────────────────────
+# Condensado del framework del editor: competir por el significado, no por la
+# información. Se inyecta en el parte matutino y en los briefs.
+FRAMEWORK_ANGULOS = """Antes de proponer nada, identificá: qué pasó, qué cambió, a quién afecta, qué emoción genera, qué patrón revela y qué consecuencia deja. No digas qué pasó: decí por qué importa para el hincha. Competí por el significado antes que por la información.
+
+Los 10 ángulos que más rinden (elegí los 2-3 que mejor apliquen a cada tema):
+1. CAMBIO DE ESTATUS — ¿alguien dejó de ser lo que era? ("ya no es revelación: es campeón")
+2. PATRÓN — ¿esto ya pasó antes? ("la historia que Boca vuelve a repetir")
+3. CONSECUENCIA — ¿qué cambia desde mañana? ("lo que cambia para River después de la final")
+4. HÉROE INESPERADO — ¿quién apareció donde nadie lo esperaba?
+5. CONFLICTO — ¿quién piensa distinto? ("la grieta que dejó la final")
+6. PARADOJA — ¿qué contradicción hay? ("jugó mejor y perdió")
+7. IDENTIDAD — ¿qué dice esto sobre el club y su gente?
+8. TENDENCIA — ¿qué se está viendo venir?
+9. QUÉ SIGNIFICA — ¿qué representa realmente? ("mucho más que un campeonato")
+10. EL DÍA DESPUÉS — ¿qué queda cuando termina el ruido? ("la pregunta que River debe responder ahora")"""
+
+# Criterios personales del editor (se cargan desde la celda criterios_editor
+# de la pestaña Config; vacío si no está configurado)
+CRITERIOS_EDITOR = ""
+
+
+def bloque_criterios() -> str:
+    if CRITERIOS_EDITOR.strip():
+        return f"\n\nCRITERIOS DEL EDITOR (respetalos siempre):\n{CRITERIOS_EDITOR.strip()}"
+    return ""
+
+
+def fetch_cobertura_ole_gnews() -> list:
+    """Trae por Google News lo último publicado por Olé (más allá de su
+    portada), para saber mejor qué 'ya dimos'. Devuelve lista de títulos."""
+    try:
+        resp = requests.get(_gnews_url("ole.com.ar", "ole"), headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        return [_limpiar_titulo_gnews(n["titulo"]) for n in extraer_rss(resp.text)]
+    except Exception:
+        return []
+
 # ─── AGENDA ACCIONABLE + MOMENTUM ─────────────────────────────────────────────
 def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     """Compara cada cluster actual con el más parecido del snapshot anterior.
@@ -264,7 +303,7 @@ def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     return out
 
 def construir_agenda(tendencias: list, ole_analisis: dict, prev_tendencias: list,
-                     max_items: int = 14) -> list:
+                     max_items: int = 14, cubiertos: list = None) -> list:
     """Convierte tendencias + análisis Olé en una lista priorizada de ACCIONES.
     Cada ítem trae un verbo (SUBIR YA / REDACTAR / SEGUIR / EMPUJAR), el motivo,
     el momentum y las noticias del cluster."""
@@ -277,7 +316,20 @@ def construir_agenda(tendencias: list, ole_analisis: dict, prev_tendencias: list
         tiene_ole = c.get("tiene_ole")
         score = base + max(delta, 0) * 2.5 + (3 if nuevo else 0) + (4 if not tiene_ole else 0)
 
-        if not tiene_ole and base >= 3:
+        # ¿Es un hueco de verdad, o ya lo dimos en días anteriores?
+        ya_dado = None
+        if not tiene_ole and cubiertos:
+            k_actual = normalizar_titulo(c["titulo"])
+            for cub in cubiertos:
+                if similitud_jaccard(k_actual, normalizar_titulo(cub["titulo"])) >= 0.35:
+                    ya_dado = cub
+                    break
+        if ya_dado is not None:
+            cuando = ya_dado.get("fecha") or "estos días"
+            accion = "RETOMAR"
+            motivo = f"lo diste el {cuando} y hoy {base} medios lo mueven — ¿actualización o segunda vuelta?"
+            score += 1
+        elif not tiene_ole and base >= 3:
             accion, motivo = "SUBIR YA", f"{base} medios lo tienen y Olé no"
         elif not tiene_ole:
             accion, motivo = "REDACTAR", f"{base} medio(s) lo cubren y Olé no"
@@ -323,15 +375,19 @@ def prompt_brief_item(item: dict) -> str:
             f'  • [{n["fuente"]["nombre"]}] {n["noticia"]["titulo"]}'
             for n in item["noticias"][:6]
         )
-    return f"""Sos editor jefe de Olé. Para este tema, dame un mini-brief en 3 líneas, español rioplatense, telegráfico y sin relleno:
-VALOR: por qué es noticia de verdad (no cuántos medios lo tienen, sino qué está en juego).
-ÁNGULO: el enfoque puntual para el lector de Olé (hincha argentino).
-TÍTULO: un título sugerido, filoso, de una línea.
+    return f"""Sos editor jefe de Olé.
+
+{FRAMEWORK_ANGULOS}{bloque_criterios()}
+
+Para este tema, dame un mini-brief telegráfico en español rioplatense:
+VALOR: por qué importa para el hincha (qué está en juego, no cuántos medios lo tienen).
+ÁNGULOS: los 2 mejores ángulos del framework aplicados a ESTE tema — que ningún otro medio haya usado (mirá cómo titularon ellos).
+TÍTULO: un título filoso para el mejor ángulo.
 
 TEMA: {item["titulo"]}{fuentes_ctx}"""
 
 AGENDA_COLORES = {
-    "SUBIR YA": "#c0392b", "REDACTAR": "#d68910",
+    "SUBIR YA": "#c0392b", "REDACTAR": "#d68910", "RETOMAR": "#7d3c98",
     "SEGUIR": "#2471a3", "EMPUJAR": "#1e8449",
 }
 

@@ -39,6 +39,7 @@ CONFIG_DEFAULTS = [
     ["horas_silencio", "48", "No repetir un aviso del mismo tema dentro de estas horas"],
     ["dias_archivo", "3", "Mover a la pestaña Archivo las filas de Agenda más viejas que esto"],
     ["ignorar", "", "Temas a no mostrar nunca (keywords separadas por coma, ej: tenis, nba)"],
+    ["criterios_editor", "", "Tus criterios editoriales, en tu idioma; la IA los respeta en el parte, los briefs y el informe"],
 ]
 
 _conf = {"json": None, "sheet_id": None}
@@ -98,7 +99,7 @@ def asegurar_estructura():
 def leer_config() -> dict:
     """Devuelve la config del Sheet con defaults sanos si algo falta."""
     cfg = {"umbral_medios": 4, "watchlist": [], "horas_silencio": 48,
-           "dias_archivo": 3, "ignorar": []}
+           "dias_archivo": 3, "ignorar": [], "criterios": ""}
     try:
         ws = _ws("Config", CONFIG_DEFAULTS[0], defaults=CONFIG_DEFAULTS)
         filas = ws.get_all_values()
@@ -120,6 +121,8 @@ def leer_config() -> dict:
                 cfg["ignorar"] = [w.strip().lower() for w in v.split(",") if w.strip()]
             elif k == "_formato_v":
                 cfg["_formato_v"] = v
+            elif k == "criterios_editor":
+                cfg["criterios"] = v
         # auto-agregar al Sheet los parámetros nuevos que falten (updates del sistema)
         for fila_def in CONFIG_DEFAULTS[1:]:
             if fila_def[0] not in vistos:
@@ -291,6 +294,13 @@ def leer_historial(dias: int = 7) -> list:
     return out
 
 
+def cobertura_propia(dias: int = 5) -> list:
+    """Temas de los últimos N días donde Olé tuvo cobertura, según el
+    Historial. Formato: [{titulo, fecha}, ...] para construir_agenda."""
+    return [{"titulo": h["titulo"], "fecha": h["fecha"]}
+            for h in leer_historial(dias) if h.get("tiene_ole")]
+
+
 # ── Archivo (limpieza automática de la Agenda) ───────────────────────────────
 def archivar_agenda_vieja(dias: int = 3) -> int:
     """Mueve a la pestaña Archivo las filas de Agenda más viejas que N días.
@@ -331,10 +341,11 @@ def guardar_informe(texto: str, periodo: str):
 
 
 # ── Formato del tablero (se aplica una sola vez, versionado en Config) ──────
-FORMATO_VERSION = "1"
+FORMATO_VERSION = "2"
 
 _COLORES_ACCION = {
     "SUBIR YA":  {"red": 0.98, "green": 0.88, "blue": 0.87},
+    "RETOMAR":   {"red": 0.93, "green": 0.88, "blue": 0.96},
     "REDACTAR":  {"red": 1.00, "green": 0.95, "blue": 0.80},
     "SEGUIR":    {"red": 0.87, "green": 0.92, "blue": 0.97},
     "EMPUJAR":   {"red": 0.88, "green": 0.96, "blue": 0.89},
@@ -351,6 +362,13 @@ def formatear_tablero() -> bool:
         sh = _sheet()
         ws = _ws("Agenda", AGENDA_HEADERS)
         sid = ws.id
+        # limpiar reglas de formato previas (de versiones anteriores)
+        for _ in range(12):
+            try:
+                sh.batch_update({"requests": [{"deleteConditionalFormatRule":
+                                               {"sheetId": sid, "index": 0}}]})
+            except Exception:
+                break
         reqs = [
             # encabezado congelado y en negrita con fondo gris
             {"updateSheetProperties": {

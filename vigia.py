@@ -16,9 +16,11 @@ import sys
 import requests as _rq
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import monitor_core
 from monitor_core import (
     TODAS_FUENTES, fetch_fuente, calcular_tendencias,
     analizar_ole_vs_compecencia_safe, construir_agenda, normalizar_titulo,
+    fetch_cobertura_ole_gnews,
 )
 import sheets_memoria as mem
 
@@ -99,9 +101,15 @@ def main():
             print(f"   {antes - len(tendencias)} temas descartados por lista 'ignorar'")
     ole = analizar_ole_vs_compecencia_safe(resultados)
     prev = mem.leer_snapshot_anterior() if not simulacro else []
-    print(f"   {len(tendencias)} clusters · snapshot anterior: {len(prev)} temas")
+    monitor_core.CRITERIOS_EDITOR = cfg.get("criterios", "")
+    cubiertos = []
+    if not simulacro:
+        cubiertos = mem.cobertura_propia(dias=5)
+        cubiertos += [{"titulo": t, "fecha": None} for t in fetch_cobertura_ole_gnews()]
+    print(f"   {len(tendencias)} clusters · snapshot anterior: {len(prev)} temas · "
+          f"memoria de cobertura propia: {len(cubiertos)} temas")
 
-    agenda = construir_agenda(tendencias, ole, prev, max_items=20)
+    agenda = construir_agenda(tendencias, ole, prev, max_items=20, cubiertos=cubiertos)
     for it in agenda:
         it["clave"] = clave_tema(it["titulo"])
 
@@ -120,7 +128,7 @@ def main():
     accionables = [
         it for it in agenda
         if (it["accion"] == "SUBIR YA" and it["cant_medios"] >= cfg["umbral_medios"])
-        or it["accion"] in ("SEGUIR", "EMPUJAR")
+        or it["accion"] in ("SEGUIR", "EMPUJAR", "RETOMAR")
         or (it["accion"] == "REDACTAR" and it["cant_medios"] >= cfg["umbral_medios"])
     ]
 
