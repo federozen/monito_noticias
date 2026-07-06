@@ -20,7 +20,8 @@ import monitor_core
 from monitor_core import (
     TODAS_FUENTES, fetch_fuente, calcular_tendencias,
     analizar_ole_vs_compecencia_safe, construir_agenda, normalizar_titulo,
-    fetch_cobertura_ole_gnews, coincide_cobertura,
+    fetch_cobertura_ole_gnews, fetch_ultimas_ole, coincide_cobertura,
+    calcular_momentum,
 )
 import sheets_memoria as mem
 
@@ -55,7 +56,7 @@ def matches_watchlist(titulo: str, watchlist: list) -> str:
     return ""
 
 
-def enviar_telegram(texto: str, html: bool = True) -> bool:
+def enviar_telegram(texto: str, html: bool = True, silencioso: bool = False) -> bool:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat:
@@ -64,6 +65,8 @@ def enviar_telegram(texto: str, html: bool = True) -> bool:
         payload = {"chat_id": chat, "text": texto, "disable_web_page_preview": True}
         if html:
             payload["parse_mode"] = "HTML"
+        if silencioso:
+            payload["disable_notification"] = True
         r = _rq.post(f"https://api.telegram.org/bot{token}/sendMessage",
                      json=payload, timeout=15)
         if r.status_code != 200:
@@ -76,7 +79,7 @@ def enviar_telegram(texto: str, html: bool = True) -> bool:
 
 def main():
     simulacro = not mem.disponible()
-    print("=== VIGÍA v4 · agenda que se auto-resuelve ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
+    print("=== VIGÍA v6 · últimas de Olé al minuto ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
 
     cfg = mem.leer_config() if not simulacro else {
         "umbral_medios": 4, "watchlist": [], "horas_silencio": 48}
@@ -103,10 +106,17 @@ def main():
     ole = analizar_ole_vs_compecencia_safe(resultados)
     prev = mem.leer_snapshot_anterior() if not simulacro else []
     monitor_core.CRITERIOS_EDITOR = cfg.get("criterios", "")
-    cubiertos = []
+    cubiertos, nuevas_ole = [], []
     if not simulacro:
-        cubiertos = mem.cobertura_propia(dias=5)
-        cubiertos += [{"titulo": t, "fecha": None} for t in fetch_cobertura_ole_gnews()]
+        # persistir lo publicado por Olé en su pestaña, por tres vías:
+        # portada (lo destacado) + /ultimas-noticias (TODO, al minuto) + Google News (respaldo)
+        portada = list(resultados.get("ole", []))
+        ultimas = fetch_ultimas_ole()
+        gnews_ole = fetch_cobertura_ole_gnews()
+        print(f"   cobertura Olé: portada {len(portada)} · últimas {len(ultimas)} · gnews {len(gnews_ole)}")
+        nuevas_ole = mem.registrar_cobertura_ole(portada + ultimas + gnews_ole)
+        # la memoria de "ya lo dimos": historial + pestaña acumulada
+        cubiertos = mem.cobertura_propia(dias=5) + mem.titulos_cobertura_ole(dias=5)
     print(f"   {len(tendencias)} clusters · snapshot anterior: {len(prev)} temas · "
           f"memoria de cobertura propia: {len(cubiertos)} temas")
 
@@ -125,11 +135,29 @@ def main():
                 "clave": clave_tema(c["titulo"]),
             })
 
+    # EXPLOTA: saltos de velocidad, incluso en temas que Olé ya tiene
+    if cfg.get("avisos_explosion", True) and prev:
+        mom = calcular_momentum(tendencias, prev)
+        for i, c in enumerate(tendencias):
+            m = mom.get(i, {})
+            if (not m.get("nuevo") and m.get("delta", 0) >= cfg.get("umbral_explosion", 4)
+                    and c.get("tiene_ole")
+                    and not any(a["clave"] == clave_tema(c["titulo"]) for a in agenda)):
+                agenda.append({
+                    "accion": "EXPLOTA",
+                    "motivo": (f"pasó de {c['cant_medios'] - m['delta']} a "
+                               f"{c['cant_medios']} medios en una hora — "
+                               f"si ya lo dimos, la nota puede quedar vieja"),
+                    "titulo": c["titulo"], "url": c.get("url"),
+                    "cant_medios": c["cant_medios"], "delta": m["delta"],
+                    "nuevo": False, "clave": clave_tema(c["titulo"]),
+                })
+
     # Filtro de urgencia: solo pasa lo que supera el umbral o es watchlist/exclusivo
     accionables = [
         it for it in agenda
         if (it["accion"] == "SUBIR YA" and it["cant_medios"] >= cfg["umbral_medios"])
-        or it["accion"] in ("SEGUIR", "EMPUJAR", "RETOMAR")
+        or it["accion"] in ("SEGUIR", "EMPUJAR", "RETOMAR", "EXPLOTA")
         or (it["accion"] == "REDACTAR" and it["cant_medios"] >= cfg["umbral_medios"])
     ]
 
@@ -178,18 +206,26 @@ def main():
         for it in nuevos:
             print(f"   [{it['accion']:8}] {it['titulo'][:70]}")
 
-    urgentes = [it for it in nuevos if it["accion"] == "SUBIR YA"]
+    urgentes = [it for it in nuevos if it["accion"] in ("SUBIR YA", "EXPLOTA")]
     if urgentes:
         lineas = "\n".join(
-            f"🔴 <b>{it['titulo'][:120]}</b>\n   {it['cant_medios']} medios y Olé no"
+            f"{'⚡' if it['accion'] == 'EXPLOTA' else '🔴'} <b>{it['titulo'][:120]}</b>\n   {it['motivo'][:90]}"
             + (f" · <a href=\"{it['url']}\">ver</a>" if it.get("url") else "")
             for it in urgentes[:5]
         )
         extra = f"\n\n(+{len(nuevos) - len(urgentes)} acciones más en la planilla)" \
             if len(nuevos) > len(urgentes) else ""
         link = f"\n📋 {mem.url_planilla()}" if not simulacro else ""
-        ok = enviar_telegram(f"<b>SUBIR YA</b>\n\n{lineas}{extra}{link}")
+        ok = enviar_telegram(f"<b>ALERTAS</b>\n\n{lineas}{extra}{link}")
         print(f"\n5) Telegram: {'enviado' if ok else 'no configurado / falló'}")
+
+    if cfg.get("digest_ole", True) and nuevas_ole:
+        cuerpo = "\n".join(f"• {t[:110]}" for t in nuevas_ole[:12])
+        extra_d = f"\n…y {len(nuevas_ole) - 12} más" if len(nuevas_ole) > 12 else ""
+        ok_d = enviar_telegram(f"📰 Lo último de Olé ({len(nuevas_ole)} nuevas):\n{cuerpo}{extra_d}",
+                               html=False, silencioso=True)
+        print(f"6) Digest Olé: {len(nuevas_ole)} notas nuevas · "
+              f"telegram {'ok (silencioso)' if ok_d else 'no configurado'}")
 
 
 if __name__ == "__main__":

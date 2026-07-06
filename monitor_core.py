@@ -301,13 +301,53 @@ def coincide_cobertura(a: set, b: set) -> bool:
     return len(sa & sb) >= 2 and solapamiento(sa, sb) >= 0.5
 
 
+def fetch_ultimas_ole() -> list:
+    """Scrapea https://www.ole.com.ar/ultimas-noticias — el listado completo de
+    lo publicado, incluidas las notas que nunca pisan la portada. Devuelve
+    [{titulo, url}, ...]. Basado en el patrón data-noteid del sitio (estable),
+    con la clase del listado como respaldo (parcial, sin el hash)."""
+    try:
+        resp = requests.get("https://www.ole.com.ar/ultimas-noticias",
+                            headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        contenedores = soup.select("div[data-noteid]")
+        if not contenedores:
+            contenedores = soup.select("li[class*='listado']")
+        out, vistos = [], set()
+        for cont in contenedores:
+            a = cont.find("a", href=True)
+            if not a:
+                continue
+            href = a["href"]
+            if href.startswith("/"):
+                href = "https://www.ole.com.ar" + href
+            if not href.startswith("http") or href in vistos:
+                continue
+            t_el = cont.find(["h1", "h2", "h3", "h4"])
+            titulo = " ".join((t_el.get_text(strip=True) if t_el
+                               else a.get_text(strip=True)).split())
+            if len(titulo) < 16:
+                # último recurso: armar el título desde el slug de la URL
+                slug = href.rstrip("/").split("/")[-1].replace(".html", "")
+                titulo = slug.replace("-", " ").capitalize()
+                if len(titulo) < 16:
+                    continue
+            vistos.add(href)
+            out.append({"titulo": titulo[:250], "url": href, "imagen": ""})
+        return out[:MAX_ITEMS]
+    except Exception:
+        return []
+
+
 def fetch_cobertura_ole_gnews() -> list:
     """Trae por Google News lo último publicado por Olé (más allá de su
-    portada), para saber mejor qué 'ya dimos'. Devuelve lista de títulos."""
+    portada). Devuelve [{titulo, url}, ...]."""
     try:
         resp = requests.get(_gnews_url("ole.com.ar", "ole"), headers=HEADERS, timeout=15)
         resp.raise_for_status()
-        return [_limpiar_titulo_gnews(n["titulo"]) for n in extraer_rss(resp.text)]
+        return [{"titulo": _limpiar_titulo_gnews(n["titulo"]), "url": n.get("url") or ""}
+                for n in extraer_rss(resp.text)]
     except Exception:
         return []
 
@@ -417,7 +457,7 @@ TÍTULO: un título filoso para el mejor ángulo.
 TEMA: {item["titulo"]}{fuentes_ctx}"""
 
 AGENDA_COLORES = {
-    "SUBIR YA": "#c0392b", "REDACTAR": "#d68910", "RETOMAR": "#7d3c98",
+    "SUBIR YA": "#c0392b", "REDACTAR": "#d68910", "RETOMAR": "#7d3c98", "EXPLOTA": "#e67e22",
     "SEGUIR": "#2471a3", "EMPUJAR": "#1e8449",
 }
 
