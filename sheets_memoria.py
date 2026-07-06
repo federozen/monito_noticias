@@ -118,6 +118,8 @@ def leer_config() -> dict:
                 cfg["watchlist"] = [w.strip().lower() for w in v.split(",") if w.strip()]
             elif k == "ignorar":
                 cfg["ignorar"] = [w.strip().lower() for w in v.split(",") if w.strip()]
+            elif k == "_formato_v":
+                cfg["_formato_v"] = v
         # auto-agregar al Sheet los parámetros nuevos que falten (updates del sistema)
         for fila_def in CONFIG_DEFAULTS[1:]:
             if fila_def[0] not in vistos:
@@ -326,6 +328,103 @@ def guardar_informe(texto: str, periodo: str):
         return True
     except Exception:
         return False
+
+
+# ── Formato del tablero (se aplica una sola vez, versionado en Config) ──────
+FORMATO_VERSION = "1"
+
+_COLORES_ACCION = {
+    "SUBIR YA":  {"red": 0.98, "green": 0.88, "blue": 0.87},
+    "REDACTAR":  {"red": 1.00, "green": 0.95, "blue": 0.80},
+    "SEGUIR":    {"red": 0.87, "green": 0.92, "blue": 0.97},
+    "EMPUJAR":   {"red": 0.88, "green": 0.96, "blue": 0.89},
+}
+_ANCHOS_AGENDA = [90, 55, 110, 420, 60, 90, 260, 180, 110, 70, 150]
+
+
+def formatear_tablero() -> bool:
+    """Convierte la pestaña Agenda en un tablero usable: encabezado fijo y en
+    negrita, columna Estado con desplegable (pendiente/hecho/descartado),
+    filas pintadas según la acción, anchos razonables y la columna técnica
+    Clave oculta. Registra la versión aplicada en Config para no repetirse."""
+    try:
+        sh = _sheet()
+        ws = _ws("Agenda", AGENDA_HEADERS)
+        sid = ws.id
+        reqs = [
+            # encabezado congelado y en negrita con fondo gris
+            {"updateSheetProperties": {
+                "properties": {"sheetId": sid, "gridProperties": {"frozenRowCount": 1}},
+                "fields": "gridProperties.frozenRowCount"}},
+            {"repeatCell": {
+                "range": {"sheetId": sid, "startRowIndex": 0, "endRowIndex": 1},
+                "cell": {"userEnteredFormat": {
+                    "textFormat": {"bold": True},
+                    "backgroundColor": {"red": 0.93, "green": 0.93, "blue": 0.93}}},
+                "fields": "userEnteredFormat(textFormat,backgroundColor)"}},
+            # Estado (col I) como desplegable
+            {"setDataValidation": {
+                "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5000,
+                          "startColumnIndex": 8, "endColumnIndex": 9},
+                "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
+                            {"userEnteredValue": "pendiente"},
+                            {"userEnteredValue": "hecho"},
+                            {"userEnteredValue": "descartado"}]},
+                         "showCustomUi": True, "strict": False}}},
+            # ocultar la columna técnica Clave (col K)
+            {"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "COLUMNS",
+                          "startIndex": 10, "endIndex": 11},
+                "properties": {"hiddenByUser": True}, "fields": "hiddenByUser"}},
+        ]
+        # anchos de columna
+        for i, ancho in enumerate(_ANCHOS_AGENDA):
+            reqs.append({"updateDimensionProperties": {
+                "range": {"sheetId": sid, "dimension": "COLUMNS",
+                          "startIndex": i, "endIndex": i + 1},
+                "properties": {"pixelSize": ancho}, "fields": "pixelSize"}})
+        # fila pintada según la acción (col C)
+        for accion, color in _COLORES_ACCION.items():
+            reqs.append({"addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5000,
+                                "startColumnIndex": 0, "endColumnIndex": 11}],
+                    "booleanRule": {
+                        "condition": {"type": "CUSTOM_FORMULA", "values": [
+                            {"userEnteredValue": f'=$C2="{accion}"'}]},
+                        "format": {"backgroundColor": color}}},
+                "index": 0}})
+        sh.batch_update({"requests": reqs})
+        # registrar la versión aplicada
+        try:
+            _ws("Config", CONFIG_DEFAULTS[0]).append_row(
+                ["_formato_v", FORMATO_VERSION, "(interno) formato del tablero aplicado"],
+                value_input_option="RAW")
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
+def limpiar_historial(dias: int = 30, umbral_filas: int = 3000) -> int:
+    """Si el Historial superó el umbral, recorta a los últimos N días."""
+    try:
+        ws = _ws("Historial", HISTORIAL_HEADERS)
+        filas = ws.get_all_values()
+        if len(filas) <= umbral_filas:
+            return 0
+        limite = datetime.now(_TZ_AR) - timedelta(days=dias)
+        quedan = [f for f in filas[1:]
+                  if (_parse_fecha(f[0]) or datetime.now(_TZ_AR)) >= limite]
+        borradas = len(filas) - 1 - len(quedan)
+        if borradas > 0:
+            ws.clear()
+            ws.update(range_name="A1", values=[HISTORIAL_HEADERS] + quedan,
+                      value_input_option="RAW")
+        return borradas
+    except Exception:
+        return 0
 
 
 def url_planilla() -> str:

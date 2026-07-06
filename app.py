@@ -396,8 +396,9 @@ ole_analisis = st.session_state.ole_analisis
 tendencias = st.session_state.tendencias
 
 # ─── TABS PRINCIPALES ────────────────────────────────────────────────────────
-tab_agenda, tab_nac, tab_int, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
+tab_agenda, tab_buscar, tab_nac, tab_int, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
     "🎯 Agenda",
+    "🔎 Buscar",
     f"🇦🇷 Nacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_NAC)})",
     f"🌍 Internacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_INT)})",
     "⭐ Olé vs Todos",
@@ -502,6 +503,53 @@ with tab_agenda:
 
             if st.session_state.agenda_briefs.get(brief_key):
                 st.info(st.session_state.agenda_briefs[brief_key])
+
+# ─── TAB BUSCADOR GLOBAL ─────────────────────────────────────────────────────
+with tab_buscar:
+    st.subheader("🔎 Buscar en todas las fuentes")
+    total_notas = sum(len(v) for v in resultados.values())
+    if not total_notas:
+        st.info("Actualizá las fuentes primero.")
+    else:
+        c_q, c_a = st.columns([3, 1])
+        with c_q:
+            q_global = st.text_input(
+                f"Buscar entre {total_notas} noticias de {len(TODAS_FUENTES)} fuentes",
+                key="q_global", placeholder="ej: Mastantuono, penal, Scaloni...",
+            )
+        with c_a:
+            ambito_b = st.selectbox("Ámbito", ["Todas", "Nacionales", "Internacionales"], key="ambito_b")
+
+        if q_global and len(q_global.strip()) >= 3:
+            q = q_global.strip().lower()
+            fuentes_b = (FUENTES_NAC if ambito_b == "Nacionales"
+                         else FUENTES_INT if ambito_b == "Internacionales"
+                         else TODAS_FUENTES)
+            hits_total = 0
+            for f in fuentes_b:
+                hits = [n for n in resultados.get(f["id"], []) if q in n["titulo"].lower()]
+                if not hits:
+                    continue
+                hits_total += len(hits)
+                st.markdown(
+                    f'<div style="margin-top:10px"><span style="color:{f["color"]};'
+                    f'font-weight:700">● {f["nombre"]}</span> '
+                    f'<span style="color:#657786;font-size:12px">({len(hits)})</span></div>',
+                    unsafe_allow_html=True,
+                )
+                for n in hits[:8]:
+                    if n.get("url"):
+                        st.markdown(f'&nbsp;&nbsp;• [{n["titulo"]}]({n["url"]})')
+                    else:
+                        st.markdown(f'&nbsp;&nbsp;• {n["titulo"]}')
+                if len(hits) > 8:
+                    st.caption(f"   …y {len(hits) - 8} más en {f['nombre']}")
+            if hits_total == 0:
+                st.warning(f'Nada con "{q_global}" en {ambito_b.lower()}. Probá con menos letras o sin acentos.')
+            else:
+                st.caption(f"{hits_total} resultados en total")
+        elif q_global:
+            st.caption("Escribí al menos 3 letras.")
 
 # ─── TAB NACIONALES ──────────────────────────────────────────────────────────
 with tab_nac:

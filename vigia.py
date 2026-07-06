@@ -136,6 +136,11 @@ def main():
         mem.guardar_snapshot(tendencias, origen="vigia")
         n_hist = mem.registrar_historial(tendencias)
         n_arch = mem.archivar_agenda_vieja(cfg.get("dias_archivo", 3))
+        if cfg.get("_formato_v") != mem.FORMATO_VERSION:
+            print("   aplicando formato al tablero:", "ok" if mem.formatear_tablero() else "falló")
+        n_limp = mem.limpiar_historial()
+        if n_limp:
+            print(f"   historial recortado: {n_limp} filas viejas")
         print(f"   memoria: snapshot ok · {n_hist} temas al Historial"
               + (f" · {n_arch} filas archivadas" if n_arch else ""))
 
