@@ -272,11 +272,14 @@ with st.sidebar:
         solo_int = st.checkbox("Solo int.", value=False)
 
     if st.button("↺ Actualizar fuentes", type="primary", use_container_width=True):
+        actualizacion_parcial = solo_nac or solo_int
         fuentes_a_cargar = TODAS_FUENTES
         if solo_nac:
             fuentes_a_cargar = FUENTES_NAC
         elif solo_int:
-            fuentes_a_cargar = FUENTES_INT
+            # Olé es la vara de comparación de todo el sistema: se refresca SIEMPRE
+            fuente_ole = next(f for f in FUENTES_NAC if f["id"] == "ole")
+            fuentes_a_cargar = FUENTES_INT + [fuente_ole]
 
         progress = st.progress(0, text="Cargando medios...")
         resultados_nuevos = {}
@@ -294,6 +297,12 @@ with st.sidebar:
                 done += 1
                 progress.progress(done / total, text=f"Cargando... {done}/{total}")
 
+        if actualizacion_parcial:
+            # conservar los datos previos de las fuentes no actualizadas
+            fusion = dict(st.session_state.get("resultados", {}))
+            fusion.update(resultados_nuevos)
+            resultados_nuevos = fusion
+            st.caption("Actualización parcial: las demás fuentes conservan sus datos previos (Olé siempre se refresca).")
         st.session_state.resultados = resultados_nuevos
         st.session_state.ultima_act = datetime.now()
         st.session_state.ole_analisis = analizar_ole_vs_compecencia_safe(resultados_nuevos)
@@ -305,7 +314,7 @@ with st.sidebar:
                 prev_mem = []
         st.session_state.prev_tendencias = prev_mem or st.session_state.get("tendencias", []) or []
         st.session_state.tendencias = calcular_tendencias(resultados_nuevos)
-        if sheets_memoria.disponible():
+        if sheets_memoria.disponible() and not actualizacion_parcial:
             try:
                 sheets_memoria.guardar_snapshot(st.session_state.tendencias, origen="app")
             except Exception:
@@ -360,7 +369,7 @@ with st.sidebar:
             with st.spinner("Analizando con Claude..."):
                 try:
                     prompt = prompt_analisis_general(st.session_state.resultados)
-                    st.session_state.analisis_general = call_claude(prompt, api_key, 1800)
+                    st.session_state.analisis_general = call_claude(prompt, api_key, 4000)
                     st.success("✔ Análisis generado")
                 except Exception as e:
                     st.error(f"Error: {e}")
@@ -375,7 +384,7 @@ with st.sidebar:
             with st.spinner("Generando informe Olé..."):
                 try:
                     prompt = prompt_informe_ole(st.session_state.resultados, analisis)
-                    st.session_state.informe_ole = call_claude(prompt, api_key, 2400)
+                    st.session_state.informe_ole = call_claude(prompt, api_key, 5000)
                     st.success("✔ Informe generado")
                 except Exception as e:
                     st.error(f"Error: {e}")
