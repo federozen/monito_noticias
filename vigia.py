@@ -20,7 +20,7 @@ import monitor_core
 from monitor_core import (
     TODAS_FUENTES, fetch_fuente, calcular_tendencias,
     analizar_ole_vs_compecencia_safe, construir_agenda, normalizar_titulo,
-    fetch_cobertura_ole_gnews,
+    fetch_cobertura_ole_gnews, coincide_cobertura,
 )
 import sheets_memoria as mem
 
@@ -75,7 +75,7 @@ def enviar_telegram(texto: str) -> bool:
 
 def main():
     simulacro = not mem.disponible()
-    print("=== VIGÍA v3 · copiloto ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
+    print("=== VIGÍA v4 · agenda que se auto-resuelve ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
 
     cfg = mem.leer_config() if not simulacro else {
         "umbral_medios": 4, "watchlist": [], "horas_silencio": 48}
@@ -144,6 +144,19 @@ def main():
         mem.guardar_snapshot(tendencias, origen="vigia")
         n_hist = mem.registrar_historial(tendencias)
         n_arch = mem.archivar_agenda_vieja(cfg.get("dias_archivo", 3))
+        # Auto-resolución: pendientes que Olé ya cubrió pasan a "cubierto"
+        cobertura_sets = [normalizar_titulo(c["titulo"]) for c in cubiertos]
+        cobertura_sets += [normalizar_titulo(n["titulo"]) for n in resultados.get("ole", [])]
+        cambios = {}
+        for nro_fila, clave in mem.filas_pendientes_agenda():
+            k = set(clave.split())
+            for kc in cobertura_sets:
+                if coincide_cobertura(k, kc):
+                    cambios[nro_fila] = "cubierto"
+                    break
+        if cambios:
+            n_res = mem.marcar_estados(cambios)
+            print(f"   auto-resueltas: {n_res} filas que Olé ya cubrió → 'cubierto'")
         if cfg.get("_formato_v") != mem.FORMATO_VERSION:
             print("   aplicando formato al tablero:", "ok" if mem.formatear_tablero() else "falló")
         n_limp = mem.limpiar_historial()

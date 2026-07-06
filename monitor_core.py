@@ -271,6 +271,36 @@ def bloque_criterios() -> str:
     return ""
 
 
+def solapamiento(a: set, b: set) -> float:
+    """Coeficiente de solapamiento: intersección / el más chico de los dos.
+    Mejor que Jaccard cuando un título es corto y creativo y el otro largo
+    y descriptivo (el caso típico de Olé vs el resto)."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / min(len(a), len(b))
+
+
+# Palabras del léxico futbolero que no distinguen un tema de otro: dos títulos
+# que solo comparten estas NO son el mismo tema.
+GENERICOS_FUTBOL = {
+    "acuerdo", "acordo", "pase", "pases", "fichaje", "fichajes", "refuerzo",
+    "refuerzos", "vuelve", "vuelta", "regreso", "regresa", "llegada", "llega",
+    "club", "equipo", "partido", "partidos", "gol", "goles", "final", "torneo",
+    "futbol", "mercado", "oficial", "confirmado", "confirmada", "negociacion",
+    "negociaciones", "jugador", "jugadores", "tecnico", "entrenador", "bombazo",
+    "ultimo", "ultima", "primera", "primer", "hora", "horas", "video", "fotos",
+}
+
+
+def coincide_cobertura(a: set, b: set) -> bool:
+    """¿Dos títulos hablan del mismo tema ya cubierto? Exige que compartan
+    al menos 2 palabras DISTINTIVAS (nombres propios, no léxico genérico)."""
+    if similitud_jaccard(a, b) >= 0.35:
+        return True
+    sa, sb = a - GENERICOS_FUTBOL, b - GENERICOS_FUTBOL
+    return len(sa & sb) >= 2 and solapamiento(sa, sb) >= 0.5
+
+
 def fetch_cobertura_ole_gnews() -> list:
     """Trae por Google News lo último publicado por Olé (más allá de su
     portada), para saber mejor qué 'ya dimos'. Devuelve lista de títulos."""
@@ -321,7 +351,7 @@ def construir_agenda(tendencias: list, ole_analisis: dict, prev_tendencias: list
         if not tiene_ole and cubiertos:
             k_actual = normalizar_titulo(c["titulo"])
             for cub in cubiertos:
-                if similitud_jaccard(k_actual, normalizar_titulo(cub["titulo"])) >= 0.35:
+                if coincide_cobertura(k_actual, normalizar_titulo(cub["titulo"])):
                     ya_dado = cub
                     break
         if ya_dado is not None:

@@ -214,7 +214,7 @@ def filtrar_ya_tratados(items: list, horas_silencio: int = 48) -> list:
         prev = estados.get(clave)
         if prev:
             estado, fh = prev
-            if estado in ("hecho", "descartado", "ok", "listo"):
+            if estado in ("hecho", "descartado", "ok", "listo", "cubierto"):
                 continue
             if _es_reciente(fh, horas_silencio):
                 continue
@@ -341,7 +341,7 @@ def guardar_informe(texto: str, periodo: str):
 
 
 # ── Formato del tablero (se aplica una sola vez, versionado en Config) ──────
-FORMATO_VERSION = "2"
+FORMATO_VERSION = "3"
 
 _COLORES_ACCION = {
     "SUBIR YA":  {"red": 0.98, "green": 0.88, "blue": 0.87},
@@ -387,7 +387,8 @@ def formatear_tablero() -> bool:
                 "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
                             {"userEnteredValue": "pendiente"},
                             {"userEnteredValue": "hecho"},
-                            {"userEnteredValue": "descartado"}]},
+                            {"userEnteredValue": "descartado"},
+                            {"userEnteredValue": "cubierto"}]},
                          "showCustomUi": True, "strict": False}}},
             # ocultar la columna técnica Clave (col K)
             {"updateDimensionProperties": {
@@ -441,6 +442,33 @@ def limpiar_historial(dias: int = 30, umbral_filas: int = 3000) -> int:
             ws.update(range_name="A1", values=[HISTORIAL_HEADERS] + quedan,
                       value_input_option="RAW")
         return borradas
+    except Exception:
+        return 0
+
+
+def filas_pendientes_agenda() -> list:
+    """Filas de Agenda en estado pendiente: [(nro_fila, clave), ...]."""
+    out = []
+    try:
+        ws = _ws("Agenda", AGENDA_HEADERS)
+        for i, fila in enumerate(ws.get_all_values()[1:], start=2):
+            if len(fila) >= 11 and fila[8].strip().lower() == "pendiente" and fila[10]:
+                out.append((i, fila[10]))
+    except Exception:
+        pass
+    return out
+
+
+def marcar_estados(cambios: dict):
+    """cambios: {nro_fila: nuevo_estado}. Actualiza la columna Estado en lote."""
+    if not cambios:
+        return 0
+    try:
+        ws = _ws("Agenda", AGENDA_HEADERS)
+        celdas = [gspread.Cell(row=fila, col=9, value=estado)
+                  for fila, estado in cambios.items()]
+        ws.update_cells(celdas)
+        return len(celdas)
     except Exception:
         return 0
 
