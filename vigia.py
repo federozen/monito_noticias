@@ -81,6 +81,13 @@ def main():
     simulacro = not mem.disponible()
     print("=== VIGÍA v7 · tracker de pases ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
 
+    # El workflow puede disparar esta corrida cada 20 min (como respaldo por si
+    # GitHub Actions saltea algún cron), pero el trabajo pesado solo se hace
+    # una vez por hora real. Si todavía no pasó suficiente tiempo, salimos.
+    if not mem.debe_correr(min_minutos=55):
+        print("Todavía no pasó 1 hora desde la última corrida exitosa. Salgo sin hacer nada.")
+        return
+
     cfg = mem.leer_config() if not simulacro else {
         "umbral_medios": 4, "watchlist": [], "horas_silencio": 48}
     print(f"config: umbral={cfg['umbral_medios']} medios · "
@@ -203,6 +210,7 @@ def main():
             print(f"   historial recortado: {n_limp} filas viejas")
         print(f"   memoria: snapshot ok · {n_hist} temas al Historial"
               + (f" · {n_arch} filas archivadas" if n_arch else ""))
+        mem.marcar_corrida_ok()
 
     if not nuevos:
         print("\nNada nuevo que avisar. Silencio = todo bajo control.")
