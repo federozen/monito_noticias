@@ -382,7 +382,7 @@ def formatear_tablero() -> bool:
                 "fields": "userEnteredFormat(textFormat,backgroundColor)"}},
             # Estado (col I) como desplegable
             {"setDataValidation": {
-                "range": {"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5000,
+                "range": {"sheetId": sid, "startRowIndex": 1,
                           "startColumnIndex": 8, "endColumnIndex": 9},
                 "rule": {"condition": {"type": "ONE_OF_LIST", "values": [
                             {"userEnteredValue": "pendiente"},
@@ -405,7 +405,7 @@ def formatear_tablero() -> bool:
         for accion, color in _COLORES_ACCION.items():
             reqs.append({"addConditionalFormatRule": {
                 "rule": {
-                    "ranges": [{"sheetId": sid, "startRowIndex": 1, "endRowIndex": 5000,
+                    "ranges": [{"sheetId": sid, "startRowIndex": 1,
                                 "startColumnIndex": 0, "endColumnIndex": 11}],
                     "booleanRule": {
                         "condition": {"type": "CUSTOM_FORMULA", "values": [
