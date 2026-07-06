@@ -55,18 +55,19 @@ def matches_watchlist(titulo: str, watchlist: list) -> str:
     return ""
 
 
-def enviar_telegram(texto: str) -> bool:
+def enviar_telegram(texto: str, html: bool = True) -> bool:
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat:
         return False
     try:
-        r = _rq.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat, "text": texto,
-                  "parse_mode": "HTML", "disable_web_page_preview": True},
-            timeout=15,
-        )
+        payload = {"chat_id": chat, "text": texto, "disable_web_page_preview": True}
+        if html:
+            payload["parse_mode"] = "HTML"
+        r = _rq.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                     json=payload, timeout=15)
+        if r.status_code != 200:
+            print(f"  Telegram rechazó el mensaje: {r.status_code} {r.text[:120]}")
         return r.status_code == 200
     except Exception as e:
         print(f"  Telegram falló: {e}")

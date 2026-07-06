@@ -504,6 +504,27 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
+MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
+
+
+def _fecha_item_rss(item) -> "datetime | None":
+    """Lee la fecha de publicación de un item RSS (pubDate) o Atom (published/updated)."""
+    for tag in ("pubDate", "published", "updated", "dc:date"):
+        t = item.find(tag)
+        if t and t.get_text(strip=True):
+            texto = t.get_text(strip=True)
+            try:
+                from email.utils import parsedate_to_datetime
+                return parsedate_to_datetime(texto)          # RFC-822 (RSS)
+            except Exception:
+                pass
+            try:
+                return datetime.fromisoformat(texto.replace("Z", "+00:00"))  # ISO (Atom)
+            except Exception:
+                pass
+    return None
+
+
 def extraer_rss(xml_text: str) -> list:
     noticias, vistos = [], set()
     try:
@@ -517,6 +538,17 @@ def extraer_rss(xml_text: str) -> list:
             titulo_tag = item.find("title")
             if not titulo_tag:
                 continue
+            # descartar notas viejas (los feeds de Google News traen de días atrás)
+            fecha_pub = _fecha_item_rss(item)
+            if fecha_pub is not None:
+                try:
+                    from datetime import timezone as _tz
+                    ahora = datetime.now(_tz.utc)
+                    fp = fecha_pub if fecha_pub.tzinfo else fecha_pub.replace(tzinfo=_tz.utc)
+                    if (ahora - fp).total_seconds() > MAX_ANTIGUEDAD_HORAS * 3600:
+                        continue
+                except Exception:
+                    pass
             titulo = titulo_tag.get_text(strip=True)
             titulo = re.sub(r"<[^>]+>", "", titulo)
             titulo = titulo.replace("&amp;","&").replace("&lt;","<").replace("&gt;",">").replace("&quot;",'"').replace("&#39;","'")

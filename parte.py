@@ -21,6 +21,18 @@ import sheets_memoria as mem
 from vigia import scrapear_todo, enviar_telegram
 
 _TZ_AR = timezone(timedelta(hours=-3))
+_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def fecha_es(dt) -> str:
+    return f"{_DIAS_ES[dt.weekday()]} {dt.strftime('%d/%m/%Y')}"
+
+
+def para_telegram(texto: str) -> str:
+    """Limpia restos de markdown que Telegram muestra crudos."""
+    import re as _re
+    t = texto.replace("**", "").replace("---", "").replace("###", "").replace("##", "")
+    return _re.sub(r"^#+\s*", "", t, flags=_re.MULTILINE).strip()
 
 
 def contexto_tema(it: dict) -> str:
@@ -47,19 +59,24 @@ los dimos, y cómo los tituló cada medio.
 
 {FRAMEWORK_ANGULOS}{bloque_criterios()}
 
-Escribí el PARTE DE LA MAÑANA en español rioplatense, directo, sin relleno:
+Escribí el PARTE DE LA MAÑANA. Reglas de forma, estrictas:
+- Español rioplatense, directo, sin relleno. MÁXIMO 550 palabras en total.
+- TEXTO PLANO: nada de #, ##, **, ni ---. Jerarquizá con MAYÚSCULAS y emojis
+  (☕ 🔴 🟡 🔵 👀). Va a leerse en un teléfono.
+- DISCIPLINA TEMPORAL: ancláte SOLO a lo que los títulos afirman. Si no consta
+  que un partido ya se jugó, no digas "juega hoy" ni "(o acaba de jugar)":
+  hablá de lo que los títulos dicen en pasado como pasado, y punto. Prohibido
+  especular con horarios. Priorizá lo marcado "nuevo" o "subió"; lo "estable"
+  de pocos medios probablemente sea arrastre viejo de portada: usalo solo si
+  aporta.
 
-PANORAMA — 3 líneas: cómo amanece el día futbolero y qué domina la conversación.
-
-5 FOCOS PARA HOY — en orden de prioridad. Por cada foco:
-  • El tema y por qué HOY (una línea).
-  • El ÁNGULO: elegí el del framework que mejor aplique y que NINGÚN medio haya
-    usado todavía (tenés sus títulos a la vista). Nombrá el tipo de ángulo.
-  • Un TÍTULO tentativo, filoso.
-  • Si el sistema marca RETOMAR, decidí: ¿actualización, segunda vuelta o dejarlo?
-
-OJO CON — 1 o 2 temas que todavía son chicos pero vienen creciendo: los que
-conviene vigilar hoy para llegar primero mañana.
+Estructura:
+PANORAMA — máximo 3 líneas: cómo amanece el día futbolero.
+5 FOCOS PARA HOY — en orden de prioridad, MÁXIMO 55 palabras cada uno:
+  🔴 tema y por qué hoy (1 línea) · ÁNGULO del framework que ningún medio usó,
+  nombrado · TÍTULO tentativo filoso · si dice RETOMAR: actualización, segunda
+  vuelta o dejarlo.
+👀 OJO CON — 1 o 2 temas chicos que vienen creciendo, una línea cada uno.
 
 PANORAMA:
 {temas}"""
@@ -100,22 +117,32 @@ def main():
         print("   Mañana tranquila: no hay temas accionables para un parte.")
         return
 
-    fecha = datetime.now(_TZ_AR).strftime("%A %d/%m/%Y")
+    fecha = fecha_es(datetime.now(_TZ_AR))
     print("3) Escribiendo el parte con Claude...")
-    parte = call_claude(prompt_parte(agenda, fecha), api_key, max_tokens=2500)
+    parte = call_claude(prompt_parte(agenda, fecha), api_key, max_tokens=4000)
     print(f"   {len(parte)} caracteres")
 
     mem.guardar_informe(parte, f"parte matutino {fecha}")
     print(f"4) Guardado en la planilla → {mem.url_planilla()}")
 
-    # Telegram: en tandas de 3500 caracteres (límite de 4096 por mensaje)
-    enviado = False
-    encabezado = f"☕ <b>Parte de la mañana — {fecha}</b>\n\n"
-    cuerpo = encabezado + parte
-    for i in range(0, min(len(cuerpo), 10500), 3500):
-        if enviar_telegram(cuerpo[i:i + 3500]):
-            enviado = True
-    print(f"5) Telegram: {'enviado' if enviado else 'no configurado'}")
+    # Telegram: texto plano, cortado en párrafos enteros (límite 4096 por mensaje)
+    cuerpo = f"☕ PARTE DE LA MAÑANA — {fecha}\n\n" + para_telegram(parte)
+    tandas, actual = [], ""
+    for parrafo in cuerpo.split("\n\n"):
+        if actual and len(actual) + len(parrafo) + 2 > 3800:
+            tandas.append(actual)
+            actual = parrafo
+        else:
+            actual = f"{actual}\n\n{parrafo}" if actual else parrafo
+    if actual:
+        tandas.append(actual)
+    tandas = tandas[:4]
+    enviado = 0
+    for nro, tanda in enumerate(tandas, 1):
+        ok = enviar_telegram(tanda, html=False)
+        enviado += 1 if ok else 0
+        print(f"   telegram tanda {nro}/{len(tandas)}: {'ok' if ok else 'FALLÓ'}")
+    print(f"5) Telegram: {enviado}/{len(tandas)} tandas enviadas")
 
 
 if __name__ == "__main__":
