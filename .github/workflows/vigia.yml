@@ -1,7 +1,7 @@
 name: Vigía del monitor
 on:
   schedule:
-    - cron: "5,25,45 * * * *"   # cada 20 min, para tener margen si GitHub saltea uno
+    - cron: "5,25,45 * * * *"   # cada 20 min: respaldo por si GitHub saltea algún disparo
   workflow_dispatch: {}
 concurrency:
   group: vigia-monitor
