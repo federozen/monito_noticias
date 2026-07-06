@@ -1,32 +1,25 @@
 name: Vigía del monitor
-
 on:
   schedule:
-    - cron: "35 * * * *"   # cada hora, 24 horas
+    - cron: "5,25,45 * * * *"   # cada 20 min, para tener margen si GitHub saltea uno
   workflow_dispatch: {}
-
 concurrency:
   group: vigia-monitor
   cancel-in-progress: false
-
 jobs:
   vigia:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - name: Debug horario
         run: |
           echo "UTC: $(date -u)"
           echo "Argentina: $(TZ=America/Argentina/Buenos_Aires date)"
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - run: pip install -r requirements-vigia.txt
-
       - name: Correr vigía
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
