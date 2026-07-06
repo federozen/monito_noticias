@@ -2,7 +2,7 @@ name: Vigía del monitor
 
 on:
   schedule:
-    - cron: "17 10-23,0-2 * * *"   # 07:17 a 23:17 Argentina
+    - cron: "17 * * * *"   # cada hora, 24 horas
   workflow_dispatch: {}
 
 concurrency:
