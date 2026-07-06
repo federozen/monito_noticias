@@ -1400,7 +1400,7 @@ TEMAS:
 CANDIDATAS A PERLITA (detectadas por señales de viralidad/rareza):
 {bloque_perlitas}"""
 
-def prompt_informe_ole(resultados: dict, analisis: dict) -> str:
+def prompt_informe_ole(resultados: dict, analisis: dict, temas_editor: str = "") -> str:
     tendencias = calcular_tendencias(resultados)
     top = tendencias[:10]
     faltantes = analisis.get("faltantes_en_ole", [])[:15]
@@ -1412,6 +1412,46 @@ def prompt_informe_ole(resultados: dict, analisis: dict) -> str:
     )
     bloque_falt = "\n".join(f"  • [{f['fuente_nombre']}] {f['titulo'][:120]}"
                              for f in faltantes) or "  (ninguno)"
+
+    if temas_editor.strip():
+        # contexto: cómo tituló la competencia los temas que pidió el editor
+        pedidos = [t.strip() for t in re.split(r"[\n,;]+", temas_editor) if t.strip()]
+        ctx = []
+        for pedido in pedidos[:6]:
+            kp = normalizar_titulo(pedido)
+            relacionadas = []
+            for c in tendencias:
+                if solapamiento(kp, normalizar_titulo(c["titulo"])) >= 0.3 or \
+                   any(w in c["titulo"].lower() for w in pedido.lower().split() if len(w) > 3):
+                    for n in c.get("noticias", [])[:4]:
+                        relacionadas.append(f"     · [{n['fuente']['nombre']}] {n['noticia']['titulo'][:110]}")
+                    if len(relacionadas) >= 6:
+                        break
+            ctx.append(f"TEMA PEDIDO: {pedido}\n"
+                       + ("\n".join(relacionadas[:6]) if relacionadas
+                          else "     (sin cobertura detectada en el panorama actual)"))
+        bloque_ctx = "\n\n".join(ctx)
+        return f"""Sos editor de Olé. No generes noticias descriptivas: competí por el
+significado antes que por la información.
+
+{FRAMEWORK_ANGULOS}{bloque_criterios()}
+
+El editor quiere trabajar ESTOS temas hoy. Para cada uno, dale munición:
+
+POR CADA TEMA PEDIDO:
+  • Los niveles de lectura que manda (qué cambió / a quién afecta / qué emoción /
+    qué patrón / qué consecuencia).
+  • CINCO ÁNGULOS del framework, cada uno con su título sugerido y el tipo de
+    ángulo nombrado. Si la competencia ya cubrió el tema (tenés sus títulos),
+    priorizá los ángulos que NADIE usó.
+  • Tu recomendación: cuál es EL ángulo ganador y por qué.
+  • Un dato o pregunta que le falta a la nota para ser imbatible.
+
+Español rioplatense, directo, sin relleno.
+
+TEMAS PEDIDOS (con cómo los tituló la competencia):
+{bloque_ctx}"""
+
     return f"""Sos editor de Olé. No generes noticias descriptivas: para cada hecho
 detectá patrones, conflictos, consecuencias, cambios de estatus, héroes
 inesperados, paradojas e impacto emocional en el hincha. Competí por el

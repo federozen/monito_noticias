@@ -369,23 +369,29 @@ with st.sidebar:
             with st.spinner("Analizando con Claude..."):
                 try:
                     prompt = prompt_analisis_general(st.session_state.resultados)
-                    st.session_state.analisis_general = call_claude(prompt, api_key, 4000)
+                    st.session_state.analisis_general = call_claude(prompt, api_key, 5000)
                     st.success("✔ Análisis generado")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-    if st.button("🟢 Informe Olé IA", use_container_width=True):
+    temas_editor = st.text_area(
+        "Temas que querés tratar (uno por línea; vacío = el sistema sugiere)",
+        key="temas_editor_ole", height=90,
+        placeholder="Almada a River\nBoca y el nuevo DT\nSelección: la lista de Scaloni",
+    )
+    _label_ole = "🟢 Ángulos para mis temas" if temas_editor.strip() else "🟢 Informe Olé IA (sugerencias)"
+    if st.button(_label_ole, use_container_width=True):
         if not api_key:
             st.error("Ingresá tu API key")
         elif not st.session_state.resultados:
             st.error("Actualizá las fuentes primero")
         else:
             analisis = st.session_state.ole_analisis or analizar_ole_vs_compecencia_safe(st.session_state.resultados)
-            with st.spinner("Generando informe Olé..."):
+            with st.spinner("Buscando ángulos con Claude..."):
                 try:
-                    prompt = prompt_informe_ole(st.session_state.resultados, analisis)
+                    prompt = prompt_informe_ole(st.session_state.resultados, analisis, temas_editor)
                     st.session_state.informe_ole = call_claude(prompt, api_key, 5000)
-                    st.success("✔ Informe generado")
+                    st.success("✔ Listo")
                 except Exception as e:
                     st.error(f"Error: {e}")
 
