@@ -75,7 +75,7 @@ def enviar_telegram(texto: str) -> bool:
 
 def main():
     simulacro = not mem.disponible()
-    print("=== VIGÍA ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
+    print("=== VIGÍA v3 · copiloto ===", "(modo simulacro: sin Sheet configurado)" if simulacro else "")
 
     cfg = mem.leer_config() if not simulacro else {
         "umbral_medios": 4, "watchlist": [], "horas_silencio": 48}
