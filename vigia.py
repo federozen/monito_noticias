@@ -280,7 +280,7 @@ def main():
         print(f"\n5) Telegram: {'enviado' if ok else 'no configurado / falló'}")
 
     if cfg.get("digest_ole", True) and nuevas_ole:
-        cuerpo = "\n".join(f"• {t[:110]}" for t in nuevas_ole[:25])
+        cuerpo = "\n".join(f"• {t[:200]}" for t in nuevas_ole[:25])
         extra_d = f"\n…y {len(nuevas_ole) - 25} más" if len(nuevas_ole) > 25 else ""
         ok_d = enviar_telegram(f"📰 Lo último de Olé ({len(nuevas_ole)} nuevas):\n{cuerpo}{extra_d}",
                                html=False, silencioso=True)
