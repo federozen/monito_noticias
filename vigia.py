@@ -61,20 +61,43 @@ def enviar_telegram(texto: str, html: bool = True, silencioso: bool = False) -> 
     chat = os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat:
         return False
-    try:
-        payload = {"chat_id": chat, "text": texto, "disable_web_page_preview": True}
-        if html:
-            payload["parse_mode"] = "HTML"
-        if silencioso:
-            payload["disable_notification"] = True
-        r = _rq.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                     json=payload, timeout=15)
-        if r.status_code != 200:
-            print(f"  Telegram rechazó el mensaje: {r.status_code} {r.text[:120]}")
-        return r.status_code == 200
-    except Exception as e:
-        print(f"  Telegram falló: {e}")
-        return False
+
+    # Telegram corta a los 4096 caracteres: partir en trozos por líneas enteras
+    LIMITE = 3900
+    if len(texto) <= LIMITE:
+        trozos = [texto]
+    else:
+        trozos, actual = [], ""
+        for linea in texto.split("\n"):
+            # una sola línea gigante: cortarla a lo bruto como último recurso
+            while len(linea) > LIMITE:
+                if actual:
+                    trozos.append(actual); actual = ""
+                trozos.append(linea[:LIMITE]); linea = linea[LIMITE:]
+            if actual and len(actual) + len(linea) + 1 > LIMITE:
+                trozos.append(actual); actual = linea
+            else:
+                actual = f"{actual}\n{linea}" if actual else linea
+        if actual:
+            trozos.append(actual)
+
+    ok_todos = True
+    for i, trozo in enumerate(trozos):
+        try:
+            payload = {"chat_id": chat, "text": trozo, "disable_web_page_preview": True}
+            if html:
+                payload["parse_mode"] = "HTML"
+            if silencioso:
+                payload["disable_notification"] = True
+            r = _rq.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                         json=payload, timeout=15)
+            if r.status_code != 200:
+                print(f"  Telegram rechazó el mensaje: {r.status_code} {r.text[:120]}")
+                ok_todos = False
+        except Exception as e:
+            print(f"  Telegram falló: {e}")
+            ok_todos = False
+    return ok_todos
 
 
 def main():
@@ -257,8 +280,8 @@ def main():
         print(f"\n5) Telegram: {'enviado' if ok else 'no configurado / falló'}")
 
     if cfg.get("digest_ole", True) and nuevas_ole:
-        cuerpo = "\n".join(f"• {t[:110]}" for t in nuevas_ole[:12])
-        extra_d = f"\n…y {len(nuevas_ole) - 12} más" if len(nuevas_ole) > 12 else ""
+        cuerpo = "\n".join(f"• {t[:110]}" for t in nuevas_ole[:25])
+        extra_d = f"\n…y {len(nuevas_ole) - 25} más" if len(nuevas_ole) > 25 else ""
         ok_d = enviar_telegram(f"📰 Lo último de Olé ({len(nuevas_ole)} nuevas):\n{cuerpo}{extra_d}",
                                html=False, silencioso=True)
         print(f"6) Digest Olé: {len(nuevas_ole)} notas nuevas · "
