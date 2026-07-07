@@ -24,8 +24,8 @@ FUENTES_NAC = [
     {"id": "lanacion",      "nombre": "La Nación",      "url": "https://www.lanacion.com.ar/deportes/",               "color": "#1565c0"},
     {"id": "tn",            "nombre": "TN Deportes",    "url": "https://tn.com.ar/deportes/",                         "color": "#cc2200"},
     {"id": "clarin",        "nombre": "Clarín Dep.",    "url": "https://www.clarin.com/deportes/",                    "color": "#c00000"},
-    {"id": "elgrafico",     "nombre": "El Gráfico",     "url": "https://www.elgrafico.com.ar/",                       "color": "#b07800"},
-    {"id": "dobleamarilla", "nombre": "Doble Amarilla", "url": "https://www.dobleamarilla.com.ar/",                   "color": "#a07800", "es_wp": True},
+    {"id": "elgrafico",   "nombre": "El Gráfico",     "url": "https://news.google.com/rss/search?q=site:elgrafico.com.ar&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#b07800", "es_rss": True},
+    {"id": "dobleamarilla","nombre": "Doble Amarilla", "url": "https://news.google.com/rss/search?q=site:dobleamarilla.com.ar&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#a07800", "es_rss": True},
     {"id": "bolavip",       "nombre": "Bolavip",        "url": "https://bolavip.com/ar",                              "color": "#c04a00"},
     {"id": "lavoz",         "nombre": "La Voz",         "url": "https://www.lavoz.com.ar/deportes/",                  "color": "#8b0000"},
     {"id": "capital",    "nombre": "La Capital (Ovación)", "url": "https://news.google.com/rss/search?q=site:lacapital.com.ar%20futbol&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#8e44ad", "es_rss": True},
@@ -74,7 +74,15 @@ FUENTES_INT = [
     {"id": "athletic",   "nombre": "The Athletic",     "url": "https://news.google.com/rss/search?q=site:nytimes.com/athletic%20football&hl=en-US&gl=US&ceid=US:en",           "color": "#00292f", "es_rss": True},
     {"id": "ovacion",    "nombre": "Ovación (UY)",     "url": "https://news.google.com/rss/search?q=site:elpais.com.uy%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",               "color": "#75aadb", "es_rss": True},
     {"id": "conmebol",   "nombre": "CONMEBOL",         "url": "https://news.google.com/rss/search?q=site:conmebol.com&hl=es-419&gl=AR&ceid=AR:es-419",                         "color": "#002b5c", "es_rss": True},
-    {"id": "uefa",       "nombre": "UEFA",             "url": "https://news.google.com/rss/search?q=site:uefa.com&hl=es-419&gl=AR&ceid=AR:es-419",                             "color": "#00004b", "es_rss": True},
+    {"id": "uefa",       "nombre": "UEFA / Champions", "url": "https://news.google.com/rss/search?q=(UEFA%20OR%20%22Champions%20League%22%20OR%20Europa%20League)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#00004b", "es_rss": True},
+
+    # ── Nuevas internacionales (vía Google News, con su edición de idioma) ──
+    {"id": "geglobo",   "nombre": "GE Globo (BR)",   "url": "https://news.google.com/rss/search?q=site:ge.globo.com&hl=pt-BR&gl=BR&ceid=BR:pt-419",        "color": "#c4170c", "es_rss": True},
+    {"id": "lance",     "nombre": "Lance! (BR)",     "url": "https://news.google.com/rss/search?q=site:lance.com.br&hl=pt-BR&gl=BR&ceid=BR:pt-419",        "color": "#ffcc00", "es_rss": True},
+    {"id": "latercera", "nombre": "La Tercera (CL)", "url": "https://news.google.com/rss/search?q=site:latercera.com%20futbol&hl=es-419&gl=CL&ceid=CL:es-419", "color": "#e2231a", "es_rss": True},
+    {"id": "abola",     "nombre": "A Bola (PT)",     "url": "https://news.google.com/rss/search?q=site:abola.pt&hl=pt-PT&gl=PT&ceid=PT:pt-150",             "color": "#e30613", "es_rss": True},
+    {"id": "bild",      "nombre": "Bild Sport (DE)", "url": "https://news.google.com/rss/search?q=site:bild.de%20fussball&hl=de&gl=DE&ceid=DE:de",           "color": "#d00000", "es_rss": True},
+    {"id": "skyit",     "nombre": "Sky Sport (IT)",  "url": "https://news.google.com/rss/search?q=site:sport.sky.it&hl=it&gl=IT&ceid=IT:it",                "color": "#0a1a3f", "es_rss": True},
 ]
 
 TODAS_FUENTES = FUENTES_NAC + FUENTES_INT
@@ -502,6 +510,51 @@ def ranking_entidades(resultados: dict, dic: dict = None) -> list:
     return out
 
 
+
+# ─── RELEVANCIA ARGENTINA (para notas del exterior) ──────────────────────────
+# Señales de que una nota internacional puede impactar en Argentina.
+RELEVANCIA_AR_KEYWORDS = [
+    "argentin", "albiceleste", "seleccion argentina", "scaloneta",
+    "messi", "di maria", "julian alvarez", "lautaro", "mac allister",
+    "enzo fernandez", "cuti romero", "dibu", "garnacho", "mastantuono",
+    "nico paz", "nico gonzalez", "otamendi", "paredes", "de paul",
+    "lo celso", "tagliafico", "lisandro martinez", "foyth", "molina",
+    "colapinto", "river", "boca", "gallardo", "scaloni", "simeone",
+    "cholo", "pochettino", "martino", "bielsa", "batistuta",
+    # jugadores que suelen sonar para clubes argentinos o son ex
+    "almada", "borre", "santos borre", "driussi", "beltran",
+]
+
+
+def relevancia_argentina(titulo: str) -> bool:
+    """True si una nota internacional tiene gancho argentino: un jugador/DT
+    argentino, un grande local, o alguien que suena para el fútbol argentino."""
+    t = _norm_texto(titulo)
+    return any(k in t for k in RELEVANCIA_AR_KEYWORDS)
+
+
+def notas_exterior_relevantes(resultados: dict, max_items: int = 40) -> list:
+    """Del panorama internacional, las notas con impacto argentino.
+    Devuelve [{fuente, titulo, url, entidades}, ...] dedupeado."""
+    out, vistos = [], set()
+    for f in TODAS_FUENTES:
+        if f["id"] in FUENTES_NAC_IDS:
+            continue
+        for n in resultados.get(f["id"], []):
+            t = n.get("titulo", "")
+            if not relevancia_argentina(t):
+                continue
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            out.append({"fuente": f, "titulo": t, "url": n.get("url"),
+                        "entidades": detectar_entidades(t)})
+    # ordenar: los que mencionan más entidades conocidas, primero
+    out.sort(key=lambda x: -len(x["entidades"]))
+    return out[:max_items]
+
+
 # ─── AGENDA ACCIONABLE + MOMENTUM ─────────────────────────────────────────────
 def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     """Compara cada cluster actual con el más parecido del snapshot anterior.
@@ -695,7 +748,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v13 · termómetro + clustering fino"
+CORE_VERSION = "núcleo v14 · +internacionales"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
@@ -1371,6 +1424,9 @@ GNEWS_LOC = {
     # español de España
     "marca": ("es", "ES", "ES:es"), "as": ("es", "ES", "ES:es"),
     "sport": ("es", "ES", "ES:es"), "mundodep": ("es", "ES", "ES:es"),
+    "geglobo": ("pt-BR", "BR", "BR:pt-419"), "lance": ("pt-BR", "BR", "BR:pt-419"),
+    "latercera": ("es-419", "CL", "CL:es-419"), "abola": ("pt-PT", "PT", "PT:pt-150"),
+    "bild": ("de", "DE", "DE:de"), "skyit": ("it", "IT", "IT:it"),
 }
 
 

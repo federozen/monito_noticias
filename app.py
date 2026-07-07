@@ -84,12 +84,7 @@ html, body, [class*="css"] {
 
 # ─── NÚCLEO COMPARTIDO (scraping, clustering, agenda) ────────────────────────
 from monitor_core import *
-
-try:
-    from monitor_core import CORE_VERSION
-except ImportError:
-    CORE_VERSION = "⚠️ núcleo desactualizado"
-
+from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 import sheets_memoria
 
@@ -418,11 +413,12 @@ ole_analisis = st.session_state.ole_analisis
 tendencias = st.session_state.tendencias
 
 # ─── TABS PRINCIPALES ────────────────────────────────────────────────────────
-tab_agenda, tab_buscar, tab_nac, tab_int, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
+tab_agenda, tab_buscar, tab_nac, tab_int, tab_arg_ext, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
     "🎯 Agenda",
     "🔎 Buscar",
     f"🇦🇷 Nacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_NAC)})",
     f"🌍 Internacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_INT)})",
+    "🧉 Impacto Argentina",
     "⭐ Olé vs Todos",
     f"📊 Tendencias ({len(tendencias)})",
     "🤖 Análisis IA",
@@ -599,6 +595,28 @@ with tab_nac:
     render_news_cards(lista, fuente_obj, resultados, cols_per_row=cols_per_row)
 
 # ─── TAB INTERNACIONALES ─────────────────────────────────────────────────────
+with tab_arg_ext:
+    st.subheader("🧉 Notas del exterior con impacto argentino")
+    st.caption("Del panorama internacional, lo que involucra a argentinos, a River/Boca o a nombres que suenan para el fútbol local.")
+    if not resultados:
+        st.info("Actualizá las fuentes primero.")
+    else:
+        relevantes = notas_exterior_relevantes(resultados)
+        if not relevantes:
+            st.info("Por ahora no hay notas del exterior con gancho argentino en el panorama.")
+        else:
+            st.caption(f"{len(relevantes)} notas detectadas · ordenadas por relevancia")
+            for r in relevantes:
+                ents = " · ".join(r["entidades"][:4]) if r["entidades"] else ""
+                chip = f'<span style="background:#eef2ff;color:#3730a3;font-size:11px;padding:2px 7px;border-radius:999px;margin-left:6px">{ents}</span>' if ents else ""
+                titulo_html = f'<a href="{r["url"]}" target="_blank" style="color:#111;text-decoration:none">{r["titulo"]}</a>' if r.get("url") else r["titulo"]
+                st.markdown(
+                    f'<div style="padding:9px 0;border-bottom:1px solid #f0f0f0">'
+                    f'<span style="color:{r["fuente"]["color"]};font-weight:700;font-size:11px;text-transform:uppercase">{r["fuente"]["nombre"]}</span>{chip}<br>'
+                    f'<span style="font-size:14px">{titulo_html}</span></div>',
+                    unsafe_allow_html=True,
+                )
+
 with tab_int:
     fuente_sel_i = st.selectbox(
         "Medio",
