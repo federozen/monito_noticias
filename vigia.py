@@ -83,10 +83,14 @@ def main():
 
     # El workflow puede disparar esta corrida cada 20 min (como respaldo por si
     # GitHub Actions saltea algún cron), pero el trabajo pesado solo se hace
-    # una vez por hora real. Si todavía no pasó suficiente tiempo, salimos.
-    if not mem.debe_correr(min_minutos=55):
-        print("Todavía no pasó 1 hora desde la última corrida exitosa. Salgo sin hacer nada.")
+    # una vez por hora real. El freno aplica SOLO a las corridas automáticas
+    # (schedule); si la disparás a mano (Run workflow), corre siempre.
+    forzado = os.environ.get("GITHUB_EVENT_NAME", "") in ("workflow_dispatch", "push", "")
+    if not forzado and not mem.debe_correr(min_minutos=55):
+        print("Corrida automática pero todavía no pasó 1 hora desde la última. Salgo sin hacer nada.")
         return
+    if forzado:
+        print("Corrida manual (Run workflow): ignoro el freno de 1 hora y actualizo ya.")
 
     cfg = mem.leer_config() if not simulacro else {
         "umbral_medios": 4, "watchlist": [], "horas_silencio": 48}
