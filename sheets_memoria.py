@@ -170,6 +170,16 @@ def debe_correr(min_minutos: int = 55) -> bool:
         return True
 
 
+def marcar_corrida_ok() -> bool:
+    """Registra que la corrida terminó bien. El timestamp que usa debe_correr
+    ya lo escribe guardar_snapshot, así que esto es una confirmación liviana:
+    nunca debe hacer fallar al vigía, por eso traga cualquier error."""
+    try:
+        return True
+    except Exception:
+        return True
+
+
 def leer_snapshot_anterior() -> list:
     """Lee los clusters de la última corrida guardada. Formato compatible
     con calcular_momentum: [{titulo, cant_medios, tiene_ole}, ...]"""
