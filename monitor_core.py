@@ -19,8 +19,8 @@ SIMILITUD_UMBRAL = 0.22
 FUENTES_NAC = [
     {"id": "ole",           "nombre": "Olé",           "url": "https://www.ole.com.ar/",                             "color": "#00a846", "es_ole": True},
     {"id": "espn",          "nombre": "ESPN AR",        "url": "https://www.espn.com.ar/",                            "color": "#cc0000", "es_espn": True},
-    {"id": "tyc",           "nombre": "TyC Sports",     "url": "https://www.tycsports.com/",                          "color": "#1565c0"},
-    {"id": "infobae",       "nombre": "Infobae",        "url": "https://www.infobae.com/deportes/",                   "color": "#b00020"},
+    {"id": "tyc",           "nombre": "TyC Sports",     "url": "https://www.tycsports.com/",                          "color": "#1565c0", "gnews_extra": True},
+    {"id": "infobae",       "nombre": "Infobae",        "url": "https://www.infobae.com/deportes/",                   "color": "#b00020", "gnews_extra": True},
     {"id": "lanacion",      "nombre": "La Nación",      "url": "https://www.lanacion.com.ar/deportes/",               "color": "#1565c0"},
     {"id": "tn",            "nombre": "TN Deportes",    "url": "https://tn.com.ar/deportes/",                         "color": "#cc2200"},
     {"id": "clarin",        "nombre": "Clarín Dep.",    "url": "https://www.clarin.com/deportes/",                    "color": "#c00000"},
@@ -28,12 +28,12 @@ FUENTES_NAC = [
     {"id": "dobleamarilla", "nombre": "Doble Amarilla", "url": "https://www.dobleamarilla.com.ar/",                   "color": "#a07800", "es_wp": True},
     {"id": "bolavip",       "nombre": "Bolavip",        "url": "https://bolavip.com/ar",                              "color": "#c04a00"},
     {"id": "lavoz",         "nombre": "La Voz",         "url": "https://www.lavoz.com.ar/deportes/",                  "color": "#8b0000"},
-    {"id": "capital",       "nombre": "La Capital",     "url": "https://www.lacapital.com.ar/secciones/ovacion.html", "color": "#6a0d8a"},
-    {"id": "na",            "nombre": "Noticias Arg.",  "url": "https://noticiasargentinas.com/search?category=65552a2ae38b1d41233b1aac", "color": "#c00060"},
+    {"id": "capital",    "nombre": "La Capital (Ovación)", "url": "https://news.google.com/rss/search?q=site:lacapital.com.ar%20futbol&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#8e44ad", "es_rss": True},
+    {"id": "na",         "nombre": "NA Deportes",      "url": "https://news.google.com/rss/search?q=site:noticiasargentinas.com%20(futbol%20OR%20deportes)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#2c3e50", "es_rss": True},
 
     # ── Nuevas nacionales (vía Google News) ──
     {"id": "cuatro42",   "nombre": "442",              "url": "https://news.google.com/rss/search?q=site:442.perfil.com&hl=es-419&gl=AR&ceid=AR:es-419",                       "color": "#7b2d8b", "es_rss": True},
-    {"id": "cielosports","nombre": "Cielosports",      "url": "https://news.google.com/rss/search?q=site:cielosports.com&hl=es-419&gl=AR&ceid=AR:es-419",                      "color": "#0090d0", "es_rss": True},
+    {"id": "cielosports","nombre": "Cielosports",      "url": "https://news.google.com/rss/search?q=site:infocielo.com%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",                      "color": "#0090d0", "es_rss": True},
     {"id": "popular",    "nombre": "Diario Popular",   "url": "https://news.google.com/rss/search?q=site:diariopopular.com.ar%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",        "color": "#d32f2f", "es_rss": True},
     {"id": "ambito",     "nombre": "Ámbito Deportes",  "url": "https://news.google.com/rss/search?q=site:ambito.com%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",                  "color": "#00594e", "es_rss": True},
     {"id": "afa",        "nombre": "AFA (oficial)",    "url": "https://news.google.com/rss/search?q=site:afa.com.ar&hl=es-419&gl=AR&ceid=AR:es-419",                           "color": "#6cace4", "es_rss": True},
@@ -45,7 +45,7 @@ FUENTES_INT = [
     {"id": "marca",     "nombre": "Marca",            "url": "https://www.marca.com/",                          "color": "#267326"},
     {"id": "mundodep",  "nombre": "Mundo Deportivo",  "url": "https://www.mundodeportivo.com/",                 "color": "#1565c0"},
     {"id": "sport",     "nombre": "Sport",            "url": "https://www.sport.es/es/",                        "color": "#cc0020"},
-    {"id": "globo",     "nombre": "Globoesporte",     "url": "https://ge.globo.com/",                           "color": "#007a2f"},
+    {"id": "globo",     "nombre": "Globoesporte",     "url": "https://ge.globo.com/",                           "color": "#007a2f", "gnews_extra": True},
     {"id": "gazzetta",  "nombre": "Gazzetta Sport",   "url": "https://www.gazzetta.it/Calcio/",                 "color": "#e8000a"},
     {"id": "corriere",  "nombre": "Corriere Sport",   "url": "https://www.corrieredellosport.it/calcio",        "color": "#e06000"},
     {"id": "record",    "nombre": "Record PT",        "url": "https://www.record.pt/futebol/",                  "color": "#c8000a"},
@@ -66,7 +66,6 @@ FUENTES_INT = [
 
     # ── Vía Google News directo (para medios sin RSS propio confiable) ──
     {"id": "tntsports",  "nombre": "TNT Sports AR",    "url": "https://news.google.com/rss/search?q=site:tntsports.com.ar&hl=es-419&gl=AR&ceid=AR:es-419",  "color": "#e4002b", "es_rss": True},
-    {"id": "relevo",     "nombre": "Relevo",           "url": "https://news.google.com/rss/search?q=site:relevo.com&hl=es-419&gl=AR&ceid=AR:es-419",         "color": "#ff3c00", "es_rss": True},
     {"id": "footmercato","nombre": "Foot Mercato",     "url": "https://news.google.com/rss/search?q=site:footmercato.net&hl=es-419&gl=AR&ceid=AR:es-419",    "color": "#0a5c36", "es_rss": True},
     {"id": "fabrizio",   "nombre": "Fabrizio Romano",  "url": "https://news.google.com/rss/search?q=%22Fabrizio%20Romano%22%20fichaje%20OR%20transfer&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#1a1a2e", "es_rss": True},
 
@@ -75,6 +74,8 @@ FUENTES_INT = [
     {"id": "athletic",   "nombre": "The Athletic",     "url": "https://news.google.com/rss/search?q=site:nytimes.com/athletic%20football&hl=en-US&gl=US&ceid=US:en",           "color": "#00292f", "es_rss": True},
     {"id": "ovacion",    "nombre": "Ovación (UY)",     "url": "https://news.google.com/rss/search?q=site:elpais.com.uy%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",               "color": "#75aadb", "es_rss": True},
     {"id": "conmebol",   "nombre": "CONMEBOL",         "url": "https://news.google.com/rss/search?q=site:conmebol.com&hl=es-419&gl=AR&ceid=AR:es-419",                         "color": "#002b5c", "es_rss": True},
+    {"id": "reddit_fut", "nombre": "Reddit r/futbol",  "url": "https://www.reddit.com/r/futbol/.rss",  "color": "#ff4500", "es_rss": True, "sin_fallback": True},
+    {"id": "reddit_soc", "nombre": "Reddit r/soccer",  "url": "https://www.reddit.com/r/soccer/.rss",  "color": "#ff4500", "es_rss": True, "sin_fallback": True},
     {"id": "uefa",       "nombre": "UEFA",             "url": "https://news.google.com/rss/search?q=site:uefa.com&hl=es-419&gl=AR&ceid=AR:es-419",                             "color": "#00004b", "es_rss": True},
 ]
 
@@ -1238,7 +1239,6 @@ GNEWS_LOC = {
     # español de España
     "marca": ("es", "ES", "ES:es"), "as": ("es", "ES", "ES:es"),
     "sport": ("es", "ES", "ES:es"), "mundodep": ("es", "ES", "ES:es"),
-    "relevo": ("es", "ES", "ES:es"),
 }
 
 
@@ -1266,6 +1266,8 @@ def _dominio_de(fuente: dict) -> str:
 
 
 def _fallback_gnews(fuente: dict, motivo_original: str) -> dict:
+    if fuente.get("sin_fallback"):
+        return {"id": fuente["id"], "noticias": [], "error": motivo_original}
     dominio = _dominio_de(fuente)
     if not dominio or "news.google.com" in fuente.get("url", ""):
         return {"id": fuente["id"], "noticias": [], "error": motivo_original}
@@ -1312,6 +1314,16 @@ def fetch_fuente(fuente: dict) -> dict:
         resp.encoding = encoding
         noticias = extraer_generico(resp.text, fuente)
         if noticias:
+            # fuentes flacas marcadas: complementar el directo con Google News (dedup)
+            if fuente.get("gnews_extra") and len(noticias) < 25:
+                extra = _fallback_gnews(fuente, "")
+                vistos = {frozenset(normalizar_titulo(n["titulo"])) for n in noticias}
+                for n in extra.get("noticias", []):
+                    k = frozenset(normalizar_titulo(n["titulo"]))
+                    if k and k not in vistos:
+                        vistos.add(k)
+                        noticias.append(n)
+                noticias = noticias[:MAX_ITEMS]
             return {"id": fuente["id"], "noticias": noticias, "error": None}
         return _fallback_gnews(fuente, "scraping directo: 0 notas")
     except Exception as e:
