@@ -563,7 +563,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
                     return src
 
     return ""
-
+CORE_VERSION = "núcleo v8"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
