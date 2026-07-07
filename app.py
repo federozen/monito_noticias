@@ -83,7 +83,8 @@ html, body, [class*="css"] {
 
 
 # ─── NÚCLEO COMPARTIDO (scraping, clustering, agenda) ────────────────────────
-from monitor_core import *          # noqa: F401,F403
+from monitor_core import *
+from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 import sheets_memoria
 
@@ -271,6 +272,7 @@ with st.sidebar:
     with col_b:
         solo_int = st.checkbox("Solo int.", value=False)
 
+    st.caption(f"⚙️ {CORE_VERSION} · {len(TODAS_FUENTES)} fuentes cargadas")
     if st.button("↺ Actualizar fuentes", type="primary", use_container_width=True):
         actualizacion_parcial = solo_nac or solo_int
         fuentes_a_cargar = TODAS_FUENTES
