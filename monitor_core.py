@@ -65,8 +65,8 @@ FUENTES_INT = [
     {"id": "calciomer",  "nombre": "Calciomercato",    "url": "https://www.calciomercato.com/rss",               "color": "#c8102e", "es_rss": True},
 
     # ── Vía Google News directo (para medios sin RSS propio confiable) ──
-    {"id": "tntsports",  "nombre": "TNT Sports AR",    "url": "https://news.google.com/rss/search?q=site:tntsports.com.ar&hl=es-419&gl=AR&ceid=AR:es-419",  "color": "#e4002b", "es_rss": True},
-    {"id": "footmercato","nombre": "Foot Mercato",     "url": "https://news.google.com/rss/search?q=site:footmercato.net&hl=es-419&gl=AR&ceid=AR:es-419",    "color": "#0a5c36", "es_rss": True},
+    {"id": "tntsports",  "nombre": "TNT Sports AR",    "url": "https://news.google.com/rss/search?q=%22TNT%20Sports%22%20(river%20OR%20boca%20OR%20futbol%20OR%20seleccion)&hl=es-419&gl=AR&ceid=AR:es-419",  "color": "#e4002b", "es_rss": True},
+    {"id": "footmercato","nombre": "Foot Mercato",     "url": "https://news.google.com/rss/search?q=site:footmercato.net%20OR%20%22Foot%20Mercato%22&hl=fr&gl=FR&ceid=FR:fr",    "color": "#0a5c36", "es_rss": True},
     {"id": "fabrizio",   "nombre": "Fabrizio Romano",  "url": "https://news.google.com/rss/search?q=%22Fabrizio%20Romano%22%20fichaje%20OR%20transfer&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#1a1a2e", "es_rss": True},
 
     # ── Nuevas internacionales: medios + instituciones ──
@@ -74,8 +74,6 @@ FUENTES_INT = [
     {"id": "athletic",   "nombre": "The Athletic",     "url": "https://news.google.com/rss/search?q=site:nytimes.com/athletic%20football&hl=en-US&gl=US&ceid=US:en",           "color": "#00292f", "es_rss": True},
     {"id": "ovacion",    "nombre": "Ovación (UY)",     "url": "https://news.google.com/rss/search?q=site:elpais.com.uy%20futbol&hl=es-419&gl=AR&ceid=AR:es-419",               "color": "#75aadb", "es_rss": True},
     {"id": "conmebol",   "nombre": "CONMEBOL",         "url": "https://news.google.com/rss/search?q=site:conmebol.com&hl=es-419&gl=AR&ceid=AR:es-419",                         "color": "#002b5c", "es_rss": True},
-    {"id": "reddit_fut", "nombre": "Reddit r/futbol",  "url": "https://www.reddit.com/r/futbol/.rss",  "color": "#ff4500", "es_rss": True, "sin_fallback": True},
-    {"id": "reddit_soc", "nombre": "Reddit r/soccer",  "url": "https://www.reddit.com/r/soccer/.rss",  "color": "#ff4500", "es_rss": True, "sin_fallback": True},
     {"id": "uefa",       "nombre": "UEFA",             "url": "https://news.google.com/rss/search?q=site:uefa.com&hl=es-419&gl=AR&ceid=AR:es-419",                             "color": "#00004b", "es_rss": True},
 ]
 
@@ -563,7 +561,8 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
                     return src
 
     return ""
-CORE_VERSION = "núcleo v8"
+
+CORE_VERSION = "núcleo v11 (sin reddit)"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
