@@ -145,6 +145,31 @@ def leer_config() -> dict:
 
 
 # ── Snapshot (memoria de la corrida anterior, para momentum) ────────────────
+def debe_correr(min_minutos: int = 55) -> bool:
+    """True si conviene correr ahora. Evita corridas duplicadas cuando GitHub
+    dispara seguido: si el último Snapshot es más reciente que min_minutos,
+    devuelve False. Ante cualquier duda o error, devuelve True (mejor correr
+    de más que saltear una corrida válida)."""
+    try:
+        ws = _ws("Snapshot", SNAPSHOT_HEADERS)
+        valores = ws.get_all_values()
+        if len(valores) < 2:
+            return True
+        # RunTS está en la primera columna de la primera fila de datos
+        ultimo_ts = None
+        for fila in valores[1:]:
+            if fila and fila[0].strip():
+                dt = _parse_fecha(fila[0].strip())
+                if dt and (ultimo_ts is None or dt > ultimo_ts):
+                    ultimo_ts = dt
+        if ultimo_ts is None:
+            return True
+        transcurrido = datetime.now(_TZ_AR) - ultimo_ts
+        return transcurrido >= timedelta(minutes=min_minutos)
+    except Exception:
+        return True
+
+
 def leer_snapshot_anterior() -> list:
     """Lee los clusters de la última corrida guardada. Formato compatible
     con calcular_momentum: [{titulo, cant_medios, tiene_ole}, ...]"""
