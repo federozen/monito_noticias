@@ -109,6 +109,32 @@ def similitud_jaccard(set_a: set, set_b: set) -> float:
     union = len(set_a | set_b)
     return interseccion / union if union > 0 else 0.0
 
+
+def similitud_ponderada(set_a: set, set_b: set, pesos: dict) -> float:
+    """Como Jaccard pero cada palabra vale según su rareza (idf): los nombres
+    propios (raros) pesan más que 'partido' o 'gol' (comunes). Mejora el
+    agrupamiento sin IA — es TF-IDF simplificado sobre conjuntos."""
+    if not set_a or not set_b:
+        return 0.0
+    inter = set_a & set_b
+    union = set_a | set_b
+    peso_inter = sum(pesos.get(w, 1.0) for w in inter)
+    peso_union = sum(pesos.get(w, 1.0) for w in union)
+    return peso_inter / peso_union if peso_union > 0 else 0.0
+
+
+def _calcular_idf(listas_keys: list) -> dict:
+    """Peso idf por palabra: log(N / docs_que_la_contienen). Palabra en muchos
+    títulos → peso bajo; palabra rara → peso alto."""
+    import math
+    from collections import Counter
+    N = len(listas_keys) or 1
+    df = Counter()
+    for keys in listas_keys:
+        for w in keys:
+            df[w] += 1
+    return {w: math.log((N + 1) / (c + 1)) + 1.0 for w, c in df.items()}
+
 def es_exclusivo(titulo: str, propio_id: str, resultados: dict) -> bool:
     keys = normalizar_titulo(titulo)
     if len(keys) < 2:
@@ -201,7 +227,10 @@ def calcular_tendencias(resultados: dict) -> list:
         for n in resultados.get(f["id"], []):
             todas.append({"noticia": n, "fuente": f, "keys": normalizar_titulo(n["titulo"])})
 
-    UMBRAL_CLUSTER = 0.20
+    # Pesos idf: las palabras raras (nombres propios) pesan más que las comunes
+    pesos = _calcular_idf([t["keys"] for t in todas])
+
+    UMBRAL_CLUSTER = 0.22
     clusters = []
     asignado = [False] * len(todas)
 
@@ -219,7 +248,7 @@ def calcular_tendencias(resultados: dict) -> list:
         for j in range(i + 1, len(todas)):
             if asignado[j]:
                 continue
-            if similitud_jaccard(cluster["keys"], todas[j]["keys"]) >= UMBRAL_CLUSTER:
+            if similitud_ponderada(cluster["keys"], todas[j]["keys"], pesos) >= UMBRAL_CLUSTER:
                 cluster["fuente_ids"].add(todas[j]["fuente"]["id"])
                 cluster["noticias"].append({"noticia": todas[j]["noticia"], "fuente": todas[j]["fuente"]})
                 asignado[j] = True
@@ -666,7 +695,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v12 · entidades"
+CORE_VERSION = "núcleo v13 · termómetro + clustering fino"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 

@@ -35,6 +35,8 @@ INFORMES_HEADERS = ["Fecha", "Periodo", "Informe"]
 COBERTURA_HEADERS = ["Fecha", "Hora", "Titulo", "URL"]
 PASES_HEADERS = ["PrimeraVez", "UltimaVez", "Titulo", "MediosMax", "Apariciones", "Olé", "URL", "Clave"]
 ENTIDADES_HEADERS = ["Ranking", "Entidad", "Menciones", "Medios", "Olé", "Actualizado"]
+ENTHIST_HEADERS = ["Fecha", "Hora", "Entidad", "Menciones"]
+TERMO_HEADERS = ["Entidad", "Tendencia", "HoyProm", "AntesProm", "Variacion", "Actualizado"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -614,7 +616,93 @@ def guardar_ranking_entidades(ranking: list, top: int = 40) -> int:
                           str(e["medios"]), "sí" if e.get("tiene_ole") else "no", ahora])
         ws.clear()
         ws.update(range_name="A1", values=filas, value_input_option="USER_ENTERED")
+        _registrar_entidades_hist(ranking[:top])
         return len(ranking[:top])
+    except Exception:
+        return 0
+
+
+def _registrar_entidades_hist(ranking: list):
+    """Guarda un snapshot compacto del ranking para calcular el termómetro."""
+    try:
+        ws = _ws("EntidadesHist", ENTHIST_HEADERS)
+        ahora = datetime.now(_TZ_AR)
+        filas = [[ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M"),
+                  e["entidad"], str(e["menciones"])] for e in ranking]
+        if filas:
+            ws.append_rows(filas, value_input_option="RAW")
+        # poda a 10 días
+        todas = ws.get_all_values()
+        if len(todas) > 6000:
+            limite = ahora - timedelta(days=10)
+            quedan = [f for f in todas[1:] if (_parse_fecha(f[0]) or ahora) >= limite]
+            ws.clear()
+            ws.update(range_name="A1", values=[ENTHIST_HEADERS] + quedan, value_input_option="RAW")
+    except Exception:
+        pass
+
+
+def calcular_termometro(horas_reciente: int = 24, horas_base: int = 72) -> list:
+    """Compara menciones promedio recientes vs la ventana previa, por entidad.
+    Sin IA: puro promedio sobre EntidadesHist. Devuelve entidades ordenadas
+    por variación, marcando 🔥 sube / ❄️ baja / ➡️ estable."""
+    from collections import defaultdict
+    try:
+        ws = _ws("EntidadesHist", ENTHIST_HEADERS)
+        ahora = datetime.now(_TZ_AR)
+        t_reciente = ahora - timedelta(hours=horas_reciente)
+        t_base = ahora - timedelta(hours=horas_base)
+        reciente = defaultdict(list)
+        base = defaultdict(list)
+        for f in ws.get_all_values()[1:]:
+            if len(f) < 4 or not str(f[3]).isdigit():
+                continue
+            dt = _parse_fecha(f"{f[0]} {f[1]}") or _parse_fecha(f[0])
+            if dt is None:
+                continue
+            ent, m = f[2], int(f[3])
+            if dt >= t_reciente:
+                reciente[ent].append(m)
+            elif dt >= t_base:
+                base[ent].append(m)
+        out = []
+        entidades = set(reciente) | set(base)
+        for e in entidades:
+            hoy = sum(reciente[e]) / len(reciente[e]) if reciente[e] else 0
+            antes = sum(base[e]) / len(base[e]) if base[e] else 0
+            if hoy < 1 and antes < 1:
+                continue
+            if antes == 0:
+                var = 100.0  # nuevo/reaparece
+                icono = "🔥 nuevo"
+            else:
+                var = (hoy - antes) / antes * 100
+                icono = "🔥 sube" if var >= 30 else "❄️ baja" if var <= -30 else "➡️ estable"
+            out.append({"entidad": e, "tendencia": icono, "hoy": round(hoy, 1),
+                        "antes": round(antes, 1), "var": round(var)})
+        out.sort(key=lambda x: -x["var"])
+        return out
+    except Exception:
+        return []
+
+
+def guardar_termometro(termo: list, top: int = 30) -> int:
+    """Escribe la pestaña 'Termómetro' con lo que sube y lo que baja."""
+    try:
+        ws = _ws("Termómetro", TERMO_HEADERS)
+        ahora = datetime.now(_TZ_AR).strftime("%Y-%m-%d %H:%M")
+        # los que suben arriba, los que bajan abajo
+        suben = [t for t in termo if "sube" in t["tendencia"] or "nuevo" in t["tendencia"]]
+        bajan = [t for t in termo if "baja" in t["tendencia"]]
+        elegidos = suben[:top // 2] + bajan[-(top // 2):]
+        filas = [TERMO_HEADERS]
+        for t in elegidos:
+            signo = "+" if t["var"] >= 0 else ""
+            filas.append([t["entidad"], t["tendencia"], str(t["hoy"]),
+                          str(t["antes"]), f"{signo}{t['var']}%", ahora])
+        ws.clear()
+        ws.update(range_name="A1", values=filas, value_input_option="USER_ENTERED")
+        return len(elegidos)
     except Exception:
         return 0
 

@@ -163,6 +163,13 @@ def main():
         if ranking:
             top3 = " · ".join(f"{e['entidad']} ({e['menciones']})" for e in ranking[:3])
             print(f"   quién manda: {n_ent} entidades · top: {top3}")
+        # Termómetro: qué sube y qué baja (usa la historia de entidades)
+        termo = mem.calcular_termometro()
+        n_termo = mem.guardar_termometro(termo)
+        if termo:
+            suben = [t for t in termo if "sube" in t["tendencia"] or "nuevo" in t["tendencia"]][:2]
+            if suben:
+                print("   termómetro: " + " · ".join(f"🔥{t['entidad']} {t['var']:+}%" for t in suben))
 
     # EXPLOTA: saltos de velocidad, incluso en temas que Olé ya tiene
     if cfg.get("avisos_explosion", True) and prev:
