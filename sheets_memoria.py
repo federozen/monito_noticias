@@ -477,7 +477,9 @@ def registrar_cobertura_ole(notas: list) -> list:
             filas.append([ahora.strftime("%Y-%m-%d"), ahora.strftime("%H:%M"),
                           t, n.get("url") or ""])
         if filas:
-            ws.append_rows(filas, value_input_option="USER_ENTERED")
+            # insertar arriba (fila 2) para que lo más nuevo quede primero;
+            # reversed() deja el orden correcto dentro de la propia tanda
+            ws.insert_rows(list(reversed(filas)), row=2, value_input_option="USER_ENTERED")
         # poda: si engordó, conservar solo los últimos 7 días
         todas = ws.get_all_values()
         if len(todas) > 2500:
@@ -585,44 +587,6 @@ def marcar_estados(cambios: dict):
         return len(celdas)
     except Exception:
         return 0
-
-
-# ── Control de corrida (para permitir cron cada 20 min sin duplicar trabajo) ─
-def debe_correr(min_minutos: int = 55) -> bool:
-    """True si ya pasó suficiente tiempo desde la última corrida EXITOSA
-    (según la marca guardada en Config). Si no hay marca, o no hay Sheet
-    configurado (modo simulacro), siempre corre."""
-    if not disponible():
-        return True
-    try:
-        ws = _ws("Config", CONFIG_DEFAULTS[0], defaults=CONFIG_DEFAULTS)
-        for fila in ws.get_all_values()[1:]:
-            if len(fila) >= 2 and fila[0].strip().lower() == "_ultima_corrida":
-                ultima = _parse_fecha(fila[1].strip())
-                if ultima is None:
-                    return True
-                minutos = (datetime.now(_TZ_AR) - ultima).total_seconds() / 60
-                return minutos >= min_minutos
-        return True  # todavía no hay marca guardada: es la primera vez
-    except Exception:
-        return True
-
-
-def marcar_corrida_ok():
-    """Guarda en Config la marca de tiempo de esta corrida exitosa."""
-    try:
-        ws = _ws("Config", CONFIG_DEFAULTS[0], defaults=CONFIG_DEFAULTS)
-        ahora = datetime.now(_TZ_AR).strftime("%Y-%m-%d %H:%M")
-        filas = ws.get_all_values()
-        for i, fila in enumerate(filas[1:], start=2):
-            if len(fila) >= 1 and fila[0].strip().lower() == "_ultima_corrida":
-                ws.update_cell(i, 2, ahora)
-                return
-        ws.append_row(
-            ["_ultima_corrida", ahora, "(interno) marca de tiempo de la última corrida exitosa del vigía"],
-            value_input_option="RAW")
-    except Exception:
-        pass
 
 
 def url_planilla() -> str:
