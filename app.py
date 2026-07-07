@@ -84,7 +84,10 @@ html, body, [class*="css"] {
 
 # ─── NÚCLEO COMPARTIDO (scraping, clustering, agenda) ────────────────────────
 from monitor_core import *
-from monitor_core import CORE_VERSION          # noqa: F401,F403
+try:
+       from monitor_core import CORE_VERSION
+   except ImportError:
+       CORE_VERSION = "⚠️ núcleo desactualizado"
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 import sheets_memoria
 
