@@ -369,6 +369,110 @@ def fetch_cobertura_ole_gnews() -> list:
     except Exception:
         return []
 
+
+# ─── ENTIDADES (detección sin IA) ────────────────────────────────────────────
+# Cada entidad: nombre canónico → lista de variantes/alias que buscar en los
+# titulares (en minúscula, sin acentos, como los normaliza _norm_texto).
+ENTIDADES_BASE = {
+    # Grandes
+    "River": ["river", "millonario", "nunez"], "Boca": ["boca", "xeneize", "bombonera"],
+    "Racing": ["racing", "academia"], "Independiente": ["independiente", "rojo"],
+    "San Lorenzo": ["san lorenzo", "ciclon", "cuervo"], "Huracan": ["huracan", "globo"],
+    "Velez": ["velez", "fortin"], "Estudiantes": ["estudiantes", "pincha"],
+    "Gimnasia": ["gimnasia", "lobo"], "Newells": ["newells", "newell", "leproso"],
+    "Rosario Central": ["rosario central", "central", "canalla"],
+    "Lanus": ["lanus", "granate"], "Banfield": ["banfield", "taladro"],
+    "Talleres": ["talleres cordoba", "talleres", "matador"], "Belgrano": ["belgrano", "pirata"],
+    "Defensa": ["defensa y justicia", "halcon"], "Argentinos": ["argentinos juniors", "argentinos", "bicho"],
+    "Tigre": ["tigre matador", "tigre"], "Platense": ["platense", "calamar"],
+    "Instituto": ["instituto cordoba", "instituto"], "Barracas": ["barracas central", "barracas"],
+    "Sarmiento": ["sarmiento junin", "sarmiento"], "Union": ["union santa fe", "union"],
+    "Colon": ["colon santa fe", "colon"], "Godoy Cruz": ["godoy cruz", "tomba"],
+    "Central Cordoba": ["central cordoba"], "Riestra": ["deportivo riestra", "riestra"],
+    # Selección
+    "Seleccion": ["seleccion argentina", "seleccion", "albiceleste", "scaloneta"],
+    "Sub-20": ["sub 20", "sub-20", "seleccion sub"], "Sub-23": ["sub 23", "sub-23"],
+    # Figuras / DTs
+    "Messi": ["messi", "leo messi"], "Scaloni": ["scaloni"], "Di Maria": ["di maria", "fideo"],
+    "Julian Alvarez": ["julian alvarez", "julian"], "Dibu Martinez": ["dibu", "emiliano martinez"],
+    "Gallardo": ["gallardo"], "Costas": ["costas"], "Enzo Fernandez": ["enzo fernandez"],
+    "Mastantuono": ["mastantuono"], "Colapinto": ["colapinto"],
+    # Torneos
+    "Libertadores": ["libertadores"], "Sudamericana": ["sudamericana"],
+    "Mundial": ["mundial", "copa del mundo", "world cup"],
+    "Champions": ["champions", "champions league"],
+    "Liga Profesional": ["liga profesional", "torneo local", "copa de la liga"],
+    "Eliminatorias": ["eliminatorias"],
+    # Grandes de Europa (para el mercado)
+    "Real Madrid": ["real madrid"], "Barcelona": ["barcelona", "barca", "culé"],
+    "PSG": ["psg", "paris saint"], "City": ["manchester city"], "United": ["manchester united"],
+    "Inter": ["inter de milan", "inter milan"], "Milan": ["ac milan"], "Juventus": ["juventus", "juve"],
+}
+
+
+def _norm_texto(t: str) -> str:
+    t = t.lower()
+    t = unicodedata.normalize("NFD", t)
+    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+
+def detectar_entidades(titulo: str, dic: dict = None) -> list:
+    """Devuelve la lista de entidades canónicas mencionadas en el titular.
+    Sin IA: busca los alias como palabras/frases dentro del texto normalizado."""
+    dic = dic or ENTIDADES_BASE
+    t = " " + _norm_texto(titulo) + " "
+    encontradas = []
+    for canonico, alias in dic.items():
+        for a in alias:
+            # límite de palabra a ambos lados para no matchear "central" dentro de otra palabra
+            if f" {a} " in t or t.startswith(f"{a} ") or t.endswith(f" {a}"):
+                encontradas.append(canonico)
+                break
+    return encontradas
+
+
+def parsear_entidades_extra(texto: str) -> dict:
+    """Convierte 'River B=riverito | Pumas=pumas,rugby' en dict de entidades."""
+    extra = {}
+    if not texto or not texto.strip():
+        return extra
+    for bloque in texto.split("|"):
+        if "=" not in bloque:
+            continue
+        nombre, alias = bloque.split("=", 1)
+        nombre = nombre.strip()
+        lista = [_norm_texto(a.strip()) for a in alias.split(",") if a.strip()]
+        if nombre and lista:
+            extra[nombre] = lista
+    return extra
+
+
+def dic_entidades(entidades_extra: str = "") -> dict:
+    """Diccionario base + las entidades propias del editor (Config)."""
+    d = dict(ENTIDADES_BASE)
+    d.update(parsear_entidades_extra(entidades_extra))
+    return d
+
+
+def ranking_entidades(resultados: dict, dic: dict = None) -> list:
+    """Cuenta menciones de cada entidad en todos los titulares de la corrida.
+    Devuelve [{entidad, menciones, medios, tiene_ole}, ...] ordenado."""
+    from collections import defaultdict
+    conteo = defaultdict(lambda: {"menciones": 0, "medios": set(), "ole": False})
+    for f in TODAS_FUENTES:
+        for n in resultados.get(f["id"], []):
+            for ent in detectar_entidades(n.get("titulo", ""), dic):
+                c = conteo[ent]
+                c["menciones"] += 1
+                c["medios"].add(f["id"])
+                if f["id"] == "ole":
+                    c["ole"] = True
+    out = [{"entidad": e, "menciones": v["menciones"], "medios": len(v["medios"]),
+            "tiene_ole": v["ole"]} for e, v in conteo.items()]
+    out.sort(key=lambda x: (-x["menciones"], -x["medios"]))
+    return out
+
+
 # ─── AGENDA ACCIONABLE + MOMENTUM ─────────────────────────────────────────────
 def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     """Compara cada cluster actual con el más parecido del snapshot anterior.
@@ -562,7 +666,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v11 (sin reddit)"
+CORE_VERSION = "núcleo v12 · entidades"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 

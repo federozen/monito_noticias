@@ -34,6 +34,7 @@ HISTORIAL_HEADERS = ["Fecha", "Hora", "Titulo", "CantMedios", "TieneOle"]
 INFORMES_HEADERS = ["Fecha", "Periodo", "Informe"]
 COBERTURA_HEADERS = ["Fecha", "Hora", "Titulo", "URL"]
 PASES_HEADERS = ["PrimeraVez", "UltimaVez", "Titulo", "MediosMax", "Apariciones", "Olé", "URL", "Clave"]
+ENTIDADES_HEADERS = ["Ranking", "Entidad", "Menciones", "Medios", "Olé", "Actualizado"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -45,6 +46,7 @@ CONFIG_DEFAULTS = [
     ["digest_ole", "si", "Mandar por Telegram (silencioso) las notas nuevas de Olé en cada corrida: si / no"],
     ["avisos_explosion", "si", "Alertar por Telegram cuando un tema explota en velocidad: si / no"],
     ["umbral_explosion", "4", "Cuántos medios tiene que sumar un tema en una hora para considerarse explosión"],
+    ["entidades_extra", "", "Entidades propias a vigilar: formato 'Nombre=alias1,alias2 | Otro=alias'. Se suman a las de base"],
 ]
 
 _conf = {"json": None, "sheet_id": None}
@@ -105,7 +107,8 @@ def leer_config() -> dict:
     """Devuelve la config del Sheet con defaults sanos si algo falta."""
     cfg = {"umbral_medios": 4, "watchlist": [], "horas_silencio": 48,
            "dias_archivo": 3, "ignorar": [], "criterios": "",
-           "digest_ole": True, "avisos_explosion": True, "umbral_explosion": 4}
+           "digest_ole": True, "avisos_explosion": True, "umbral_explosion": 4,
+           "entidades_extra": ""}
     try:
         ws = _ws("Config", CONFIG_DEFAULTS[0], defaults=CONFIG_DEFAULTS)
         filas = ws.get_all_values()
@@ -135,6 +138,8 @@ def leer_config() -> dict:
                 cfg["avisos_explosion"] = v.lower().startswith("s")
             elif k == "umbral_explosion" and v.isdigit():
                 cfg["umbral_explosion"] = int(v)
+            elif k == "entidades_extra":
+                cfg["entidades_extra"] = v
         # auto-agregar al Sheet los parámetros nuevos que falten (updates del sistema)
         for fila_def in CONFIG_DEFAULTS[1:]:
             if fila_def[0] not in vistos:
@@ -595,6 +600,23 @@ def registrar_pases(temas: list) -> tuple:
         return (len(nuevas), len(celdas) // 5)
     except Exception:
         return (0, 0)
+
+
+def guardar_ranking_entidades(ranking: list, top: int = 40) -> int:
+    """Reemplaza la pestaña 'Quién manda' con el ranking de entidades de la
+    corrida actual. Sin IA: son conteos de menciones."""
+    try:
+        ws = _ws("Quién manda", ENTIDADES_HEADERS)
+        ahora = datetime.now(_TZ_AR).strftime("%Y-%m-%d %H:%M")
+        filas = [ENTIDADES_HEADERS]
+        for i, e in enumerate(ranking[:top], 1):
+            filas.append([str(i), e["entidad"], str(e["menciones"]),
+                          str(e["medios"]), "sí" if e.get("tiene_ole") else "no", ahora])
+        ws.clear()
+        ws.update(range_name="A1", values=filas, value_input_option="USER_ENTERED")
+        return len(ranking[:top])
+    except Exception:
+        return 0
 
 
 def filas_pendientes_agenda() -> list:

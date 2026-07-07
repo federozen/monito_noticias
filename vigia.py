@@ -21,7 +21,7 @@ from monitor_core import (
     TODAS_FUENTES, fetch_fuente, calcular_tendencias,
     analizar_ole_vs_compecencia_safe, construir_agenda, normalizar_titulo,
     fetch_cobertura_ole_gnews, fetch_ultimas_ole, coincide_cobertura,
-    calcular_momentum, es_tema_de_pases,
+    calcular_momentum, es_tema_de_pases, ranking_entidades, dic_entidades,
 )
 import sheets_memoria as mem
 
@@ -155,6 +155,14 @@ def main():
         n_new, n_upd = mem.registrar_pases(temas_pases)
         print(f"   pases: {len(temas_pases)} operaciones en el panorama → "
               f"{n_new} nuevas · {n_upd} actualizadas en la pestaña")
+
+        # Ranking de entidades (sin IA): quién manda hoy en la conversación
+        dic = dic_entidades(cfg.get("entidades_extra", ""))
+        ranking = ranking_entidades(resultados, dic)
+        n_ent = mem.guardar_ranking_entidades(ranking)
+        if ranking:
+            top3 = " · ".join(f"{e['entidad']} ({e['menciones']})" for e in ranking[:3])
+            print(f"   quién manda: {n_ent} entidades · top: {top3}")
 
     # EXPLOTA: saltos de velocidad, incluso en temas que Olé ya tiene
     if cfg.get("avisos_explosion", True) and prev:
