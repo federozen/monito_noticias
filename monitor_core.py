@@ -630,6 +630,68 @@ FILTROS_TEMATICOS = {
             "insolita situacion", "camara capto", "cámara captó",
         ],
     },
+    "confirmado": {
+        "titulo": "✅ Confirmado / Oficial",
+        "desc": "Noticia dura confirmada: anuncios, comunicados, oficializaciones.",
+        "keywords": [
+            "confirmado", "confirmada", "confirmo", "confirmó", "oficial",
+            "oficializo", "oficializó", "es oficial", "anuncio", "anunció",
+            "anuncia", "comunicado", "parte oficial", "hizo oficial",
+            "acuerdo cerrado", "cerrado", "firmado", "sellado", "hecho oficial",
+            "ya es", "de forma oficial", "presento", "presentó", "presentacion oficial",
+        ],
+    },
+    "lesiones": {
+        "titulo": "🏥 Lesiones / Bajas",
+        "desc": "Parte médico: lesiones, molestias, bajas y recuperaciones.",
+        "keywords": [
+            "lesion", "lesión", "lesionado", "lesionada", "desgarro", "distension",
+            "distensión", "molestia", "operado", "operacion", "operación",
+            "sera operado", "será operado", "baja", "se rompio", "se rompió",
+            "rotura", "resonancia", "estudios medicos", "estudios médicos",
+            "parte medico", "parte médico", "tiempo de recuperacion",
+            "vuelve a las canchas", "recuperacion", "recuperación", "esguince",
+            "sobrecarga", "tocado", "en duda por", "se resiente",
+        ],
+    },
+    "previa": {
+        "titulo": "📅 Previa / Formaciones",
+        "desc": "Todo lo pre-partido: formaciones, convocados, cómo llegan.",
+        "keywords": [
+            "formacion", "formación", "probable formacion", "el once", "onces",
+            "la probable", "cómo llegan", "como llegan", "la previa", "previa del",
+            "concentrados", "convocados", "convocatoria", "lista de convocados",
+            "el equipo para", "sale con", "saldria con", "saldría con",
+            "los citados", "hora y tv", "horario y tv", "donde ver", "dónde ver",
+            "arbitro del partido", "árbitro del partido", "posibles titulares",
+        ],
+    },
+    "declaraciones": {
+        "titulo": "🎙️ Declaraciones",
+        "desc": "Lo que dijo alguien: frases, conferencias, cruces verbales.",
+        "keywords": [
+            "aseguro", "aseguró", "declaro", "declaró", "hablo", "habló",
+            "palabras de", "en conferencia", "conferencia de prensa", "dijo",
+            "afirmo", "afirmó", "sentencio", "sentenció", "disparo contra",
+            "disparó contra", "picante contra", "apunto contra", "apuntó contra",
+            "se sincero", "se sinceró", "revelo", "reveló", "confeso", "confesó",
+            "explico", "explicó", "reconocio", "reconoció", "banco a", "bancó a",
+            "respondio", "respondió", "cruce", "fuerte contra",
+        ],
+    },
+    "arbitraje": {
+        "titulo": "⚖️ Reglamento / Arbitraje",
+        "desc": "VAR, penales, expulsiones, designaciones y jugadas polémicas.",
+        "keywords": [
+            "var", "penal", "penales", "offside", "orsai", "fuera de juego",
+            "expulsion", "expulsión", "expulsado", "roja", "tarjeta roja",
+            "doble amarilla", "designacion", "designación", "designado",
+            "dirigira", "dirigirá", "arbitro", "árbitro", "arbitraje",
+            "polemica arbitral", "polémica arbitral", "mano en el area",
+            "mano en el área", "gol anulado", "anulado", "revision del var",
+            "revisión del var", "cobro", "no cobro", "reglamento",
+        ],
+    },
 }
 
 
@@ -879,7 +941,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v19 · primicias v2"
+CORE_VERSION = "núcleo v20 · +filtros"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
