@@ -576,28 +576,40 @@ with tab_buscar:
 
 # ─── TAB NACIONALES ──────────────────────────────────────────────────────────
 with tab_nac:
-    st.caption("Elegí un medio:")
+    st.caption("Elegí un medio (arriba o en la columna lateral):")
     _op_nac = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_NAC}
     _sel_nac_lbl = st.radio("Medio", list(_op_nac.keys()), horizontal=True,
                             key="sel_nac", label_visibility="collapsed")
     fuente_sel = _op_nac[_sel_nac_lbl]
-    fuente_obj = next(f for f in FUENTES_NAC if f["nombre"] == fuente_sel)
-    noticias = resultados.get(fuente_obj["id"], [])
 
-    col_h1, col_h2 = st.columns([3, 1])
-    with col_h1:
-        st.markdown(
-            f'<span style="color:{fuente_obj["color"]};font-weight:700;font-size:18px">'
-            f'{fuente_obj["nombre"]}</span> — {len(noticias)} noticias',
-            unsafe_allow_html=True,
-        )
-    with col_h2:
-        cols_per_row = st.selectbox("Columnas", [2, 3, 4], index=1, key="cols_nac")
+    _lat_nac, _cont_nac = st.columns([1, 5])
+    with _lat_nac:
+        st.markdown('<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Medios</div>', unsafe_allow_html=True)
+        for f in FUENTES_NAC:
+            n_notas = len(resultados.get(f["id"], []))
+            activo = f["nombre"] == fuente_sel
+            estilo = (f'background:{f["color"]}22;border-left:3px solid {f["color"]};font-weight:700'
+                      if activo else 'border-left:3px solid transparent')
+            if st.button(f'{f["nombre"]}', key=f"lat_nac_{f['id']}", use_container_width=True):
+                st.session_state.sel_nac = next(k for k, v in _op_nac.items() if v == f["nombre"])
+                st.rerun()
 
-    filtro = st.text_input("🔍 Filtrar por palabra", key="filtro_nac")
-    lista = [n for n in noticias if filtro.lower() in n["titulo"].lower()] if filtro else noticias
+    with _cont_nac:
+        fuente_obj = next(f for f in FUENTES_NAC if f["nombre"] == fuente_sel)
+        noticias = resultados.get(fuente_obj["id"], [])
+        col_h1, col_h2 = st.columns([3, 1])
+        with col_h1:
+            st.markdown(
+                f'<span style="color:{fuente_obj["color"]};font-weight:700;font-size:18px">'
+                f'{fuente_obj["nombre"]}</span> — {len(noticias)} noticias',
+                unsafe_allow_html=True,
+            )
+        with col_h2:
+            cols_per_row = st.selectbox("Columnas", [2, 3, 4], index=1, key="cols_nac")
 
-    render_news_cards(lista, fuente_obj, resultados, cols_per_row=cols_per_row)
+        filtro = st.text_input("🔍 Filtrar por palabra", key="filtro_nac")
+        lista = [n for n in noticias if filtro.lower() in n["titulo"].lower()] if filtro else noticias
+        render_news_cards(lista, fuente_obj, resultados, cols_per_row=cols_per_row)
 
 # ─── TAB INTERNACIONALES ─────────────────────────────────────────────────────
 with tab_filtros:
@@ -687,28 +699,38 @@ with tab_arg_ext:
                 )
 
 with tab_int:
-    st.caption("Elegí un medio:")
+    st.caption("Elegí un medio (arriba o en la columna lateral):")
     _op_int = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_INT}
     _sel_int_lbl = st.radio("Medio", list(_op_int.keys()), horizontal=True,
                             key="sel_int", label_visibility="collapsed")
     fuente_sel_i = _op_int[_sel_int_lbl]
-    fuente_obj_i = next(f for f in FUENTES_INT if f["nombre"] == fuente_sel_i)
-    noticias_i = resultados.get(fuente_obj_i["id"], [])
 
-    col_h1i, col_h2i = st.columns([3, 1])
-    with col_h1i:
-        st.markdown(
-            f'<span style="color:{fuente_obj_i["color"]};font-weight:700;font-size:18px">'
-            f'{fuente_obj_i["nombre"]}</span> — {len(noticias_i)} noticias',
-            unsafe_allow_html=True,
-        )
-    with col_h2i:
-        cols_per_row_i = st.selectbox("Columnas", [2, 3, 4], index=1, key="cols_int")
+    _lat_int, _cont_int = st.columns([1, 5])
+    with _lat_int:
+        st.markdown('<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Medios</div>', unsafe_allow_html=True)
+        for f in FUENTES_INT:
+            if st.button(f'{f["nombre"]}', key=f"lat_int_{f['id']}", use_container_width=True):
+                st.session_state.sel_int = next(k for k, v in _op_int.items() if v == f["nombre"])
+                st.rerun()
 
-    filtro_i = st.text_input("🔍 Filtrar por palabra", key="filtro_int")
-    lista_i = [n for n in noticias_i if filtro_i.lower() in n["titulo"].lower()] if filtro_i else noticias_i
+    with _cont_int:
+        fuente_obj_i = next(f for f in FUENTES_INT if f["nombre"] == fuente_sel_i)
+        noticias_i = resultados.get(fuente_obj_i["id"], [])
 
-    render_news_cards(lista_i, fuente_obj_i, resultados, cols_per_row=cols_per_row_i)
+        col_h1i, col_h2i = st.columns([3, 1])
+        with col_h1i:
+            st.markdown(
+                f'<span style="color:{fuente_obj_i["color"]};font-weight:700;font-size:18px">'
+                f'{fuente_obj_i["nombre"]}</span> — {len(noticias_i)} noticias',
+                unsafe_allow_html=True,
+            )
+        with col_h2i:
+            cols_per_row_i = st.selectbox("Columnas", [2, 3, 4], index=1, key="cols_int")
+
+        filtro_i = st.text_input("🔍 Filtrar por palabra", key="filtro_int")
+        lista_i = [n for n in noticias_i if filtro_i.lower() in n["titulo"].lower()] if filtro_i else noticias_i
+
+        render_news_cards(lista_i, fuente_obj_i, resultados, cols_per_row=cols_per_row_i)
 
 # ─── TAB OLÉ VS TODOS ────────────────────────────────────────────────────────
 with tab_ole:
