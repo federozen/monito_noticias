@@ -576,11 +576,11 @@ with tab_buscar:
 
 # ─── TAB NACIONALES ──────────────────────────────────────────────────────────
 with tab_nac:
-    fuente_sel = st.selectbox(
-        "Medio",
-        [f["nombre"] for f in FUENTES_NAC],
-        key="sel_nac",
-    )
+    st.caption("Elegí un medio:")
+    _op_nac = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_NAC}
+    _sel_nac_lbl = st.radio("Medio", list(_op_nac.keys()), horizontal=True,
+                            key="sel_nac", label_visibility="collapsed")
+    fuente_sel = _op_nac[_sel_nac_lbl]
     fuente_obj = next(f for f in FUENTES_NAC if f["nombre"] == fuente_sel)
     noticias = resultados.get(fuente_obj["id"], [])
 
@@ -687,11 +687,11 @@ with tab_arg_ext:
                 )
 
 with tab_int:
-    fuente_sel_i = st.selectbox(
-        "Medio",
-        [f["nombre"] for f in FUENTES_INT],
-        key="sel_int",
-    )
+    st.caption("Elegí un medio:")
+    _op_int = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_INT}
+    _sel_int_lbl = st.radio("Medio", list(_op_int.keys()), horizontal=True,
+                            key="sel_int", label_visibility="collapsed")
+    fuente_sel_i = _op_int[_sel_int_lbl]
     fuente_obj_i = next(f for f in FUENTES_INT if f["nombre"] == fuente_sel_i)
     noticias_i = resultados.get(fuente_obj_i["id"], [])
 
