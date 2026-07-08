@@ -581,14 +581,12 @@ with tab_nac:
     _op_nac = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_NAC}
     _labels_nac = list(_op_nac.keys())
 
-    # índice preseleccionado desde la columna lateral (si se clickeó)
-    _idx_nac = st.session_state.get("_pend_nac", None)
-    _kwargs_nac = {"index": _idx_nac} if _idx_nac is not None else {}
+    # si la columna lateral pidió un medio, fijar el valor del radio ANTES de crearlo
     if "_pend_nac" in st.session_state:
-        del st.session_state["_pend_nac"]
+        st.session_state["sel_nac"] = _labels_nac[st.session_state.pop("_pend_nac")]
 
     _sel_nac_lbl = st.radio("Medio", _labels_nac, horizontal=True,
-                            key="sel_nac", label_visibility="collapsed", **_kwargs_nac)
+                            key="sel_nac", label_visibility="collapsed")
     fuente_sel = _op_nac[_sel_nac_lbl]
 
     _lat_nac, _cont_nac = st.columns([1, 5])
@@ -708,13 +706,11 @@ with tab_int:
     _op_int = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_INT}
     _labels_int = list(_op_int.keys())
 
-    _idx_int = st.session_state.get("_pend_int", None)
-    _kwargs_int = {"index": _idx_int} if _idx_int is not None else {}
     if "_pend_int" in st.session_state:
-        del st.session_state["_pend_int"]
+        st.session_state["sel_int"] = _labels_int[st.session_state.pop("_pend_int")]
 
     _sel_int_lbl = st.radio("Medio", _labels_int, horizontal=True,
-                            key="sel_int", label_visibility="collapsed", **_kwargs_int)
+                            key="sel_int", label_visibility="collapsed")
     fuente_sel_i = _op_int[_sel_int_lbl]
 
     _lat_int, _cont_int = st.columns([1, 5])
