@@ -577,21 +577,26 @@ with tab_buscar:
 # ─── TAB NACIONALES ──────────────────────────────────────────────────────────
 with tab_nac:
     st.caption("Elegí un medio (arriba o en la columna lateral):")
+    _nombres_nac = [f["nombre"] for f in FUENTES_NAC]
     _op_nac = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_NAC}
-    _sel_nac_lbl = st.radio("Medio", list(_op_nac.keys()), horizontal=True,
-                            key="sel_nac", label_visibility="collapsed")
+    _labels_nac = list(_op_nac.keys())
+
+    # índice preseleccionado desde la columna lateral (si se clickeó)
+    _idx_nac = st.session_state.get("_pend_nac", None)
+    _kwargs_nac = {"index": _idx_nac} if _idx_nac is not None else {}
+    if "_pend_nac" in st.session_state:
+        del st.session_state["_pend_nac"]
+
+    _sel_nac_lbl = st.radio("Medio", _labels_nac, horizontal=True,
+                            key="sel_nac", label_visibility="collapsed", **_kwargs_nac)
     fuente_sel = _op_nac[_sel_nac_lbl]
 
     _lat_nac, _cont_nac = st.columns([1, 5])
     with _lat_nac:
         st.markdown('<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Medios</div>', unsafe_allow_html=True)
-        for f in FUENTES_NAC:
-            n_notas = len(resultados.get(f["id"], []))
-            activo = f["nombre"] == fuente_sel
-            estilo = (f'background:{f["color"]}22;border-left:3px solid {f["color"]};font-weight:700'
-                      if activo else 'border-left:3px solid transparent')
+        for idx, f in enumerate(FUENTES_NAC):
             if st.button(f'{f["nombre"]}', key=f"lat_nac_{f['id']}", use_container_width=True):
-                st.session_state.sel_nac = next(k for k, v in _op_nac.items() if v == f["nombre"])
+                st.session_state["_pend_nac"] = idx
                 st.rerun()
 
     with _cont_nac:
@@ -701,16 +706,23 @@ with tab_arg_ext:
 with tab_int:
     st.caption("Elegí un medio (arriba o en la columna lateral):")
     _op_int = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_INT}
-    _sel_int_lbl = st.radio("Medio", list(_op_int.keys()), horizontal=True,
-                            key="sel_int", label_visibility="collapsed")
+    _labels_int = list(_op_int.keys())
+
+    _idx_int = st.session_state.get("_pend_int", None)
+    _kwargs_int = {"index": _idx_int} if _idx_int is not None else {}
+    if "_pend_int" in st.session_state:
+        del st.session_state["_pend_int"]
+
+    _sel_int_lbl = st.radio("Medio", _labels_int, horizontal=True,
+                            key="sel_int", label_visibility="collapsed", **_kwargs_int)
     fuente_sel_i = _op_int[_sel_int_lbl]
 
     _lat_int, _cont_int = st.columns([1, 5])
     with _lat_int:
         st.markdown('<div style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase;margin-bottom:4px">Medios</div>', unsafe_allow_html=True)
-        for f in FUENTES_INT:
+        for idx, f in enumerate(FUENTES_INT):
             if st.button(f'{f["nombre"]}', key=f"lat_int_{f['id']}", use_container_width=True):
-                st.session_state.sel_int = next(k for k, v in _op_int.items() if v == f["nombre"])
+                st.session_state["_pend_int"] = idx
                 st.rerun()
 
     with _cont_int:
