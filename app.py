@@ -277,12 +277,14 @@ with st.sidebar:
     if st.button("↺ Actualizar fuentes", type="primary", use_container_width=True):
         actualizacion_parcial = solo_nac or solo_int
         fuentes_a_cargar = TODAS_FUENTES
+        # El grupo Primicias (primicias de mercado, oficiales) se refresca SIEMPRE
+        _esp = list(FUENTES_ESP)
+        _ole = next(f for f in FUENTES_NAC if f["id"] == "ole")
         if solo_nac:
-            fuentes_a_cargar = FUENTES_NAC
+            fuentes_a_cargar = FUENTES_NAC + _esp
         elif solo_int:
             # Olé es la vara de comparación de todo el sistema: se refresca SIEMPRE
-            fuente_ole = next(f for f in FUENTES_NAC if f["id"] == "ole")
-            fuentes_a_cargar = FUENTES_INT + [fuente_ole]
+            fuentes_a_cargar = FUENTES_INT + [_ole] + _esp
 
         progress = st.progress(0, text="Cargando medios...")
         resultados_nuevos = {}
