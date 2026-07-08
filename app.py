@@ -413,12 +413,13 @@ ole_analisis = st.session_state.ole_analisis
 tendencias = st.session_state.tendencias
 
 # ─── TABS PRINCIPALES ────────────────────────────────────────────────────────
-tab_agenda, tab_buscar, tab_nac, tab_int, tab_arg_ext, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
+tab_agenda, tab_buscar, tab_nac, tab_int, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
     "🎯 Agenda",
     "🔎 Buscar",
     f"🇦🇷 Nacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_NAC)})",
     f"🌍 Internacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_INT)})",
     "🧉 Impacto Argentina",
+    "🎚️ Filtros",
     "⭐ Olé vs Todos",
     f"📊 Tendencias ({len(tendencias)})",
     "🤖 Análisis IA",
@@ -595,6 +596,36 @@ with tab_nac:
     render_news_cards(lista, fuente_obj, resultados, cols_per_row=cols_per_row)
 
 # ─── TAB INTERNACIONALES ─────────────────────────────────────────────────────
+with tab_filtros:
+    st.subheader("🎚️ Filtros temáticos")
+    st.caption("Rebaná el panorama por tema: mercado de pases, polémicas o virales.")
+    if not resultados:
+        st.info("Actualizá las fuentes primero.")
+    else:
+        cA, cB = st.columns([2, 1])
+        with cA:
+            opciones = {v["titulo"]: k for k, v in FILTROS_TEMATICOS.items()}
+            sel_titulo = st.radio("Tema", list(opciones.keys()), horizontal=True, key="filtro_tema")
+            filtro_id = opciones[sel_titulo]
+        with cB:
+            solo_ar = st.toggle("Solo con impacto argentino", key="filtro_solo_ar")
+        st.caption(FILTROS_TEMATICOS[filtro_id]["desc"])
+        notas_f = filtrar_por_tema(resultados, filtro_id, solo_ar=solo_ar)
+        if not notas_f:
+            st.info("No hay notas para este filtro en el panorama actual.")
+        else:
+            st.caption(f"{len(notas_f)} notas")
+            for r in notas_f:
+                ents = " · ".join(r["entidades"][:4]) if r["entidades"] else ""
+                chip = f'<span style="background:#f0fdf4;color:#166534;font-size:11px;padding:2px 7px;border-radius:999px;margin-left:6px">{ents}</span>' if ents else ""
+                titulo_html = f'<a href="{r["url"]}" target="_blank" style="color:#111;text-decoration:none">{r["titulo"]}</a>' if r.get("url") else r["titulo"]
+                st.markdown(
+                    f'<div style="padding:9px 0;border-bottom:1px solid #f0f0f0">'
+                    f'<span style="color:{r["fuente"]["color"]};font-weight:700;font-size:11px;text-transform:uppercase">{r["fuente"]["nombre"]}</span>{chip}<br>'
+                    f'<span style="font-size:14px">{titulo_html}</span></div>',
+                    unsafe_allow_html=True,
+                )
+
 with tab_arg_ext:
     st.subheader("🧉 Notas del exterior con impacto argentino")
     st.caption("Del panorama internacional, lo que involucra a argentinos, a River/Boca o a nombres que suenan para el fútbol local.")

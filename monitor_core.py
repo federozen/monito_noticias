@@ -514,15 +514,28 @@ def ranking_entidades(resultados: dict, dic: dict = None) -> list:
 # ─── RELEVANCIA ARGENTINA (para notas del exterior) ──────────────────────────
 # Señales de que una nota internacional puede impactar en Argentina.
 RELEVANCIA_AR_KEYWORDS = [
+    # país y selección
     "argentin", "albiceleste", "seleccion argentina", "scaloneta",
+    "afa", "eliminatorias sudamericana",
+    # figuras de la Selección
     "messi", "di maria", "julian alvarez", "lautaro", "mac allister",
-    "enzo fernandez", "cuti romero", "dibu", "garnacho", "mastantuono",
-    "nico paz", "nico gonzalez", "otamendi", "paredes", "de paul",
-    "lo celso", "tagliafico", "lisandro martinez", "foyth", "molina",
+    "enzo fernandez", "cuti romero", "dibu", "emiliano martinez", "garnacho",
+    "mastantuono", "nico paz", "nico gonzalez", "otamendi", "paredes",
+    "de paul", "lo celso", "tagliafico", "lisandro martinez", "licha martinez",
+    "foyth", "molina", "montiel", "acuna", "palacios", "almada",
+    "gonzalo montiel", "thiago almada", "valentin carboni", "carboni",
+    "soule", "matias soule", "buonanotte", "simeone hijo", "giuliano simeone",
+    # DTs argentinos en el mundo
     "colapinto", "river", "boca", "gallardo", "scaloni", "simeone",
     "cholo", "pochettino", "martino", "bielsa", "batistuta",
-    # jugadores que suelen sonar para clubes argentinos o son ex
-    "almada", "borre", "santos borre", "driussi", "beltran",
+    "mascherano", "sebastian beccacece", "gustavo alfaro",
+    # ex / que suenan para clubes argentinos
+    "borre", "santos borre", "driussi", "beltran", "lucas beltran",
+    # temas que impactan de rebote en Argentina
+    "libertadores", "copa sudamericana", "mundial de clubes",
+    "rival de argentina", "grupo de argentina",
+    # mercado europeo que moviliza al hincha argentino
+    "here we go", "fabrizio romano",
 ]
 
 
@@ -551,6 +564,67 @@ def notas_exterior_relevantes(resultados: dict, max_items: int = 40) -> list:
             out.append({"fuente": f, "titulo": t, "url": n.get("url"),
                         "entidades": detectar_entidades(t)})
     # ordenar: los que mencionan más entidades conocidas, primero
+    out.sort(key=lambda x: -len(x["entidades"]))
+    return out[:max_items]
+
+
+
+# ─── FILTROS TEMÁTICOS (rebanadas del panorama, sin IA) ──────────────────────
+FILTROS_TEMATICOS = {
+    "mercado": {
+        "titulo": "💸 Mercado de pases",
+        "desc": "Fichajes, ofertas, negociaciones y movimientos del libro de pases.",
+        "keywords": PASES_KEYWORDS,   # reusa el vocabulario de pases que ya existe
+    },
+    "polemica": {
+        "titulo": "🔥 Polémicas y conflictos",
+        "desc": "Escándalos, cruces, denuncias, sanciones y líos que generan debate.",
+        "keywords": [
+            "polemica", "escandalo", "denuncia", "sancion", "sancionado", "multa",
+            "expulsado", "expulsion", "roja", "insulto", "agresion", "pelea",
+            "cruce", "picante", "fuerte contra", "apunto contra", "estallo",
+            "renuncia", "renuncio", "echado", "despido", "crisis", "conflicto",
+            "arbitro", "arbitraje", "var polemico", "penal inexistente",
+            "amenaza", "investigacion", "acusacion", "acuso", "repudio", "furia",
+        ],
+    },
+    "viral": {
+        "titulo": "😮 Virales y color",
+        "desc": "Lo insólito, emotivo, curioso y con potencial de tráfico.",
+        "keywords": [
+            "insolito", "viral", "furor", "locura", "increible", "emotivo",
+            "conmovedor", "gesto", "sorpresa", "record", "historico", "inedito",
+            "nunca visto", "por primera vez", "el video", "las fotos", "memes",
+            "reaccion", "se emociono", "hasta las lagrimas", "revoluciono",
+            "hazana", "insolita", "curioso", "bizarro", "sorprendio",
+        ],
+    },
+}
+
+
+def filtrar_por_tema(resultados: dict, filtro_id: str, solo_ar: bool = False,
+                     max_items: int = 50) -> list:
+    """Rebana el panorama por un filtro temático. Si solo_ar=True, además exige
+    gancho argentino. Devuelve [{fuente, titulo, url, entidades}, ...]."""
+    conf = FILTROS_TEMATICOS.get(filtro_id)
+    if not conf:
+        return []
+    kws = conf["keywords"]
+    out, vistos = [], set()
+    for f in TODAS_FUENTES:
+        for n in resultados.get(f["id"], []):
+            t = n.get("titulo", "")
+            tn = _norm_texto(t)
+            if not any(k in tn for k in kws):
+                continue
+            if solo_ar and not relevancia_argentina(t):
+                continue
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            out.append({"fuente": f, "titulo": t, "url": n.get("url"),
+                        "entidades": detectar_entidades(t)})
     out.sort(key=lambda x: -len(x["entidades"]))
     return out[:max_items]
 
@@ -748,7 +822,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v14 · +internacionales"
+CORE_VERSION = "núcleo v15 · filtros temáticos"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
