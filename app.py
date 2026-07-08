@@ -84,6 +84,7 @@ html, body, [class*="css"] {
 
 # ─── NÚCLEO COMPARTIDO (scraping, clustering, agenda) ────────────────────────
 from monitor_core import *
+from monitor_core import _norm_texto
 from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 import sheets_memoria
@@ -602,15 +603,31 @@ with tab_filtros:
     if not resultados:
         st.info("Actualizá las fuentes primero.")
     else:
+        opciones = {v["titulo"]: k for k, v in FILTROS_TEMATICOS.items()}
+        opciones["🎯 Personalizado"] = "__custom__"
         cA, cB = st.columns([2, 1])
         with cA:
-            opciones = {v["titulo"]: k for k, v in FILTROS_TEMATICOS.items()}
             sel_titulo = st.radio("Tema", list(opciones.keys()), horizontal=True, key="filtro_tema")
             filtro_id = opciones[sel_titulo]
         with cB:
             solo_ar = st.toggle("Solo con impacto argentino", key="filtro_solo_ar")
-        st.caption(FILTROS_TEMATICOS[filtro_id]["desc"])
-        notas_f = filtrar_por_tema(resultados, filtro_id, solo_ar=solo_ar)
+
+        if filtro_id == "__custom__":
+            palabras_raw = st.text_input(
+                "Tus palabras (separadas por coma) — se buscan en los titulares",
+                key="filtro_custom",
+                placeholder="ej: lesion, desgarro, operado   /   selia, mundial de clubes   /   colon, union",
+            )
+            kws = [_norm_texto(p.strip()) for p in palabras_raw.split(",") if p.strip()]
+            if not kws:
+                st.info("Escribí una o más palabras para filtrar.")
+                notas_f = []
+            else:
+                st.caption(f"Filtrando por: {', '.join(kws)}")
+                notas_f = filtrar_custom(resultados, kws, solo_ar=solo_ar)
+        else:
+            st.caption(FILTROS_TEMATICOS[filtro_id]["desc"])
+            notas_f = filtrar_por_tema(resultados, filtro_id, solo_ar=solo_ar)
         if not notas_f:
             st.info("No hay notas para este filtro en el panorama actual.")
         else:

@@ -24,8 +24,8 @@ FUENTES_NAC = [
     {"id": "lanacion",      "nombre": "La Nación",      "url": "https://www.lanacion.com.ar/deportes/",               "color": "#1565c0"},
     {"id": "tn",            "nombre": "TN Deportes",    "url": "https://tn.com.ar/deportes/",                         "color": "#cc2200"},
     {"id": "clarin",        "nombre": "Clarín Dep.",    "url": "https://www.clarin.com/deportes/",                    "color": "#c00000"},
-    {"id": "elgrafico",   "nombre": "El Gráfico",     "url": "https://news.google.com/rss/search?q=site:elgrafico.com.ar&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#b07800", "es_rss": True},
-    {"id": "dobleamarilla","nombre": "Doble Amarilla", "url": "https://news.google.com/rss/search?q=site:dobleamarilla.com.ar&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#a07800", "es_rss": True},
+    {"id": "elgrafico",   "nombre": "El Gráfico",     "url": "https://news.google.com/rss/search?q=%22El%20Gr%C3%A1fico%22%20(futbol%20OR%20river%20OR%20boca%20OR%20seleccion)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#b07800", "es_rss": True},
+    {"id": "dobleamarilla","nombre": "Doble Amarilla", "url": "https://news.google.com/rss/search?q=%22Doble%20Amarilla%22&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#a07800", "es_rss": True},
     {"id": "bolavip",       "nombre": "Bolavip",        "url": "https://bolavip.com/ar",                              "color": "#c04a00"},
     {"id": "lavoz",         "nombre": "La Voz",         "url": "https://www.lavoz.com.ar/deportes/",                  "color": "#8b0000"},
     {"id": "capital",    "nombre": "La Capital (Ovación)", "url": "https://news.google.com/rss/search?q=site:lacapital.com.ar%20futbol&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#8e44ad", "es_rss": True},
@@ -78,7 +78,6 @@ FUENTES_INT = [
 
     # ── Nuevas internacionales (vía Google News, con su edición de idioma) ──
     {"id": "geglobo",   "nombre": "GE Globo (BR)",   "url": "https://news.google.com/rss/search?q=site:ge.globo.com&hl=pt-BR&gl=BR&ceid=BR:pt-419",        "color": "#c4170c", "es_rss": True},
-    {"id": "lance",     "nombre": "Lance! (BR)",     "url": "https://news.google.com/rss/search?q=site:lance.com.br&hl=pt-BR&gl=BR&ceid=BR:pt-419",        "color": "#ffcc00", "es_rss": True},
     {"id": "latercera", "nombre": "La Tercera (CL)", "url": "https://news.google.com/rss/search?q=site:latercera.com%20futbol&hl=es-419&gl=CL&ceid=CL:es-419", "color": "#e2231a", "es_rss": True},
     {"id": "abola",     "nombre": "A Bola (PT)",     "url": "https://news.google.com/rss/search?q=site:abola.pt&hl=pt-PT&gl=PT&ceid=PT:pt-150",             "color": "#e30613", "es_rss": True},
     {"id": "bild",      "nombre": "Bild Sport (DE)", "url": "https://news.google.com/rss/search?q=site:bild.de%20fussball&hl=de&gl=DE&ceid=DE:de",           "color": "#d00000", "es_rss": True},
@@ -308,16 +307,17 @@ def bloque_criterios() -> str:
 
 
 PASES_KEYWORDS = [
-    "fichaje", "fichajes", "ficha a", "pase de", "el pase", "refuerzo", "refuerzos",
-    "transfer", "mercado de pases", "oferta por", "oferta de", "ofertas",
-    "prestamo", "préstamo", "cedido", "cesion", "cesión", "clausula", "cláusula",
-    "acuerdo por", "acuerdo con", "cerro la llegada", "cerró la llegada",
-    "llegada de", "arribo de", "incorpora", "incorporacion", "incorporación",
+    "fichaje", "fichajes", "ficha a", "el pase de", "pase a", "refuerzo", "refuerzos",
+    "transfer", "mercado de pases", "libro de pases", "oferta por", "ofertas por",
+    "prestamo", "préstamo", "a prestamo", "cedido", "cesion", "cesión",
+    "clausula", "cláusula", "acuerdo por el pase", "cerro la llegada", "cerró la llegada",
+    "incorpora a", "incorporacion de", "incorporación de", "sumo a", "sumó a",
     "negocia por", "negociacion por", "negociación por", "here we go",
-    "se va de", "deja el club", "rescision", "rescisión", "renovacion", "renovación",
-    "renueva", "firma con", "firmó con", "firmo con", "nuevo club", "vendido a",
-    "venta de", "traspaso", "quiere contratar", "suena en", "en la mira de",
-    "pretendido por", "interesa a", "va por", "ofrecieron",
+    "se va a", "deja el club", "rescision", "rescisión", "renovacion de contrato",
+    "renovación de contrato", "renueva con", "firma con", "firmó con", "firmo con",
+    "nuevo refuerzo", "vendido a", "venta de", "traspaso", "quiere contratar a",
+    "oferta millonaria", "pretendido por", "seria nuevo", "sería nuevo",
+    "es nuevo jugador", "llega a", "desembarca en",
 ]
 
 
@@ -592,14 +592,44 @@ FILTROS_TEMATICOS = {
         "titulo": "😮 Virales y color",
         "desc": "Lo insólito, emotivo, curioso y con potencial de tráfico.",
         "keywords": [
-            "insolito", "viral", "furor", "locura", "increible", "emotivo",
-            "conmovedor", "gesto", "sorpresa", "record", "historico", "inedito",
-            "nunca visto", "por primera vez", "el video", "las fotos", "memes",
-            "reaccion", "se emociono", "hasta las lagrimas", "revoluciono",
-            "hazana", "insolita", "curioso", "bizarro", "sorprendio",
+            "insolito", "insólito", "insolita", "viral", "se hizo viral", "furor",
+            "increible", "increíble", "emotivo", "emocionante", "conmovedor",
+            "el gesto de", "insolita imagen", "nunca visto", "las redes",
+            "estallaron las redes", "el video que", "el video de", "video viral",
+            "las fotos de", "memes", "los memes", "se emociono", "se emocionó",
+            "hasta las lagrimas", "hasta las lágrimas", "revoluciono", "revolucionó",
+            "curioso", "curiosa", "bizarro", "papelon", "papelón", "blooper",
+            "la reaccion de", "la reacción de", "lo que hizo", "no vas a creer",
+            "insolita situacion", "camara capto", "cámara captó",
         ],
     },
 }
+
+
+def filtrar_custom(resultados: dict, keywords: list, solo_ar: bool = False,
+                   max_items: int = 60) -> list:
+    """Filtro personalizado del Streamlit: rebana el panorama por una lista de
+    palabras libres que escribe el editor. Sin IA."""
+    if not keywords:
+        return []
+    kws = [_norm_texto(k) for k in keywords if k.strip()]
+    out, vistos = [], set()
+    for f in TODAS_FUENTES:
+        for n in resultados.get(f["id"], []):
+            t = n.get("titulo", "")
+            tn = _norm_texto(t)
+            if not any(k in tn for k in kws):
+                continue
+            if solo_ar and not relevancia_argentina(t):
+                continue
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            out.append({"fuente": f, "titulo": t, "url": n.get("url"),
+                        "entidades": detectar_entidades(t)})
+    out.sort(key=lambda x: -len(x["entidades"]))
+    return out[:max_items]
 
 
 def filtrar_por_tema(resultados: dict, filtro_id: str, solo_ar: bool = False,
@@ -822,7 +852,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v15 · filtros temáticos"
+CORE_VERSION = "núcleo v16 · filtros afinados"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
@@ -1498,7 +1528,7 @@ GNEWS_LOC = {
     # español de España
     "marca": ("es", "ES", "ES:es"), "as": ("es", "ES", "ES:es"),
     "sport": ("es", "ES", "ES:es"), "mundodep": ("es", "ES", "ES:es"),
-    "geglobo": ("pt-BR", "BR", "BR:pt-419"), "lance": ("pt-BR", "BR", "BR:pt-419"),
+    "geglobo": ("pt-BR", "BR", "BR:pt-419"),
     "latercera": ("es-419", "CL", "CL:es-419"), "abola": ("pt-PT", "PT", "PT:pt-150"),
     "bild": ("de", "DE", "DE:de"), "skyit": ("it", "IT", "IT:it"),
 }
