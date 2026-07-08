@@ -84,8 +84,33 @@ FUENTES_INT = [
     {"id": "skyit",     "nombre": "Sky Sport (IT)",  "url": "https://news.google.com/rss/search?q=site:sport.sky.it&hl=it&gl=IT&ceid=IT:it",                "color": "#0a1a3f", "es_rss": True},
 ]
 
-TODAS_FUENTES = FUENTES_NAC + FUENTES_INT
+# ─── GRUPO 3: PRIMICIAS E INSTITUCIONES ──────────────────────────────────────
+# No son diarios genéricos: traen lo que otros tardan o no tienen — primicias de
+# mercado, comunicados oficiales, designaciones, agregadores temáticos. Todo por
+# Google News (búsqueda por marca/nombre), que es la vía confiable.
+G_AR = "&hl=es-419&gl=AR&ceid=AR:es-419"
+FUENTES_ESP = [
+    # Primicias de mercado (periodistas especializados)
+    {"id": "merlo",     "nombre": "César Merlo",      "url": f"https://news.google.com/rss/search?q=%22C%C3%A9sar%20Luis%20Merlo%22%20OR%20%22Cesar%20Merlo%22{G_AR}", "color": "#0b7a3b", "es_rss": True, "sin_fallback": True},
+    {"id": "grova",     "nombre": "García Grova",     "url": f"https://news.google.com/rss/search?q=%22Germ%C3%A1n%20Garc%C3%ADa%20Grova%22%20OR%20%22Garcia%20Grova%22{G_AR}", "color": "#0b7a3b", "es_rss": True, "sin_fallback": True},
+    {"id": "balague",   "nombre": "Guillem Balagué",  "url": f"https://news.google.com/rss/search?q=%22Guillem%20Balagu%C3%A9%22%20futbol{G_AR}", "color": "#5b3fa0", "es_rss": True, "sin_fallback": True},
+    # Institucional argentino
+    {"id": "ligapro",   "nombre": "Liga Profesional", "url": f"https://news.google.com/rss/search?q=%22Liga%20Profesional%22%20(fixture%20OR%20fecha%20OR%20programacion%20OR%20oficial){G_AR}", "color": "#1a3c8f", "es_rss": True},
+    {"id": "arbitros",  "nombre": "Designaciones/Arbitraje", "url": f"https://news.google.com/rss/search?q=(designaciones%20arbitrales%20OR%20%22arbitros%20para%20la%20fecha%22%20OR%20%22dirigir%C3%A1%22){G_AR}", "color": "#111111", "es_rss": True},
+    # Agregadores temáticos (red de pesca ancha: todos los medios que Google indexa)
+    {"id": "gn_river",  "nombre": "GNews · River",    "url": f"https://news.google.com/rss/search?q=River%20Plate%20futbol{G_AR}", "color": "#c8102e", "es_rss": True, "sin_fallback": True},
+    {"id": "gn_boca",   "nombre": "GNews · Boca",     "url": f"https://news.google.com/rss/search?q=Boca%20Juniors%20futbol{G_AR}", "color": "#005baa", "es_rss": True, "sin_fallback": True},
+    {"id": "gn_selec",  "nombre": "GNews · Selección","url": f"https://news.google.com/rss/search?q=%22selecci%C3%B3n%20argentina%22{G_AR}", "color": "#6cace4", "es_rss": True, "sin_fallback": True},
+    {"id": "gn_pases",  "nombre": "GNews · Mercado AR","url": f"https://news.google.com/rss/search?q=(fichaje%20OR%20refuerzo%20OR%20%22mercado%20de%20pases%22)%20futbol%20argentino{G_AR}", "color": "#d68910", "es_rss": True, "sin_fallback": True},
+    # Verticales flojas hoy
+    {"id": "ascenso",   "nombre": "Ascenso",          "url": f"https://news.google.com/rss/search?q=(ascenso%20OR%20%22primera%20nacional%22%20OR%20%22primera%20B%22)%20futbol%20argentino{G_AR}", "color": "#6b7280", "es_rss": True},
+    {"id": "femenino",  "nombre": "Fútbol femenino",  "url": f"https://news.google.com/rss/search?q=%22futbol%20femenino%22%20argentina{G_AR}", "color": "#db2777", "es_rss": True},
+    {"id": "juveniles", "nombre": "Juveniles/Sub",    "url": f"https://news.google.com/rss/search?q=(sub%2020%20OR%20sub%2017%20OR%20juveniles)%20seleccion%20argentina{G_AR}", "color": "#0891b2", "es_rss": True},
+]
+
+TODAS_FUENTES = FUENTES_NAC + FUENTES_INT + FUENTES_ESP
 FUENTES_NAC_IDS = {f["id"] for f in FUENTES_NAC}
+FUENTES_ESP_IDS = {f["id"] for f in FUENTES_ESP}
 
 # ─── STOPWORDS ────────────────────────────────────────────────────────────────
 STOPWORDS = set([
@@ -852,7 +877,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v16 · filtros afinados"
+CORE_VERSION = "núcleo v17 · grupo primicias"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 

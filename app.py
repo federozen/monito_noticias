@@ -414,11 +414,12 @@ ole_analisis = st.session_state.ole_analisis
 tendencias = st.session_state.tendencias
 
 # ─── TABS PRINCIPALES ────────────────────────────────────────────────────────
-tab_agenda, tab_buscar, tab_nac, tab_int, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
+tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
     "🎯 Agenda",
     "🔎 Buscar",
     f"🇦🇷 Nacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_NAC)})",
     f"🌍 Internacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_INT)})",
+    f"📡 Primicias ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_ESP)})",
     "🧉 Impacto Argentina",
     "🎚️ Filtros",
     "⭐ Olé vs Todos",
@@ -642,6 +643,24 @@ with tab_filtros:
                     f'<span style="font-size:14px">{titulo_html}</span></div>',
                     unsafe_allow_html=True,
                 )
+
+with tab_esp:
+    st.subheader("📡 Primicias e Instituciones")
+    st.caption("Periodistas de mercado, fuentes oficiales, designaciones arbitrales y agregadores temáticos. Traen lo que los diarios tardan o no tienen.")
+    if not resultados:
+        st.info("Actualizá las fuentes primero.")
+    else:
+        cols_esp = st.columns(3)
+        for i, f in enumerate(FUENTES_ESP):
+            notas = resultados.get(f["id"], [])
+            with cols_esp[i % 3]:
+                st.markdown(f'<span style="color:{f["color"]};font-weight:700">● {f["nombre"]}</span> <span style="color:#888;font-size:12px">({len(notas)})</span>', unsafe_allow_html=True)
+                for n in notas[:10]:
+                    if n.get("url"):
+                        st.markdown(f'<div style="font-size:12.5px;margin:3px 0"><a href="{n["url"]}" target="_blank" style="color:#222;text-decoration:none">{n["titulo"]}</a></div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(f'<div style="font-size:12.5px;margin:3px 0;color:#222">{n["titulo"]}</div>', unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
 with tab_arg_ext:
     st.subheader("🧉 Notas del exterior con impacto argentino")
