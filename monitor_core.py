@@ -877,7 +877,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v17 · grupo primicias"
+CORE_VERSION = "núcleo v18 · fix RSS"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
@@ -1606,6 +1606,21 @@ def fetch_fuente(fuente: dict) -> dict:
     try:
         resp = requests.get(fuente["url"], headers=HEADERS, timeout=15)
         resp.raise_for_status()
+
+        # Fuentes RSS (feeds de Google News y similares): parser dedicado
+        if fuente.get("es_rss"):
+            resp.encoding = resp.encoding or "utf-8"
+            noticias = extraer_rss(resp.text)
+            for n in noticias:
+                n["titulo"] = _limpiar_titulo_gnews(n["titulo"])
+            noticias = noticias[:MAX_ITEMS]
+            if noticias:
+                return {"id": fuente["id"], "noticias": noticias, "error": None}
+            # si el feed vino vacío y permite fallback, intentarlo
+            if not fuente.get("sin_fallback"):
+                return _fallback_gnews(fuente, "feed rss vacío")
+            return {"id": fuente["id"], "noticias": [], "error": "feed rss vacío"}
+
         # Detectar encoding real desde el header o el HTML antes de usar resp.text
         # requests a veces asume ISO-8859-1 para text/html sin charset declarado
         content_type = resp.headers.get("content-type", "").lower()
