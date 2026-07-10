@@ -1726,13 +1726,18 @@ def fetch_fuente(fuente: dict) -> dict:
         return _fallback_gnews(fuente, str(e))
 
 # ─── IA — CLAUDE ──────────────────────────────────────────────────────────────
-def call_claude(prompt: str, api_key: str, max_tokens: int = 2000) -> str:
+MODELO_ANALISIS = "claude-sonnet-5"       # para notas y análisis profundos
+MODELO_ECONOMICO = "claude-haiku-4-5-20251001"  # para partes/resúmenes: mucho más barato
+
+
+def call_claude(prompt: str, api_key: str, max_tokens: int = 2000,
+                modelo: str = None) -> str:
     if not api_key:
         raise RuntimeError("Falta la API key de Anthropic.")
     try:
         client = anthropic.Anthropic(api_key=api_key)
         msg = client.messages.create(
-            model="claude-sonnet-5",
+            model=modelo or MODELO_ANALISIS,
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1807,6 +1812,78 @@ TEMAS:
 
 CANDIDATAS A PERLITA (detectadas por señales de viralidad/rareza):
 {bloque_perlitas}"""
+
+def _temas_por_origen(resultados: dict, origen: str, top: int = 25) -> list:
+    tendencias = calcular_tendencias(resultados)
+    out = []
+    for c in tendencias:
+        if origen == "nac" and c.get("nac", 0) >= 1:
+            out.append(c)
+        elif origen == "int" and c.get("intl", 0) >= 1:
+            out.append(c)
+    return out[:top]
+
+
+def prompt_parte_nacional(resultados: dict) -> str:
+    temas = _temas_por_origen(resultados, "nac", 25)
+    perlitas = candidatas_perlitas(resultados)[:8]
+    lineas = "\n".join(
+        f"{i+1}. {c['titulo'][:130]} — {c['cant_medios']} medios · Ole: {'si' if c.get('tiene_ole') else 'NO'}"
+        for i, c in enumerate(temas)
+    )
+    bloque_perlitas = "\n".join(f"  - [{f}] {t}" for f, t in perlitas) or "  (ninguna)"
+    return f"""Sos editor jefe de un diario deportivo argentino. Este es el parte de
+la manana del futbol ARGENTINO: los temas que mas mueven los medios locales ahora.{bloque_criterios()}
+
+Escribi un parte breve y accionable en espanol rioplatense:
+
+LO QUE MANDA HOY - 3 lineas: que domina la agenda del futbol argentino.
+
+TEMAS (una linea cada uno, agrupa por River / Boca / otros clubes / Seleccion /
+mercado local): que paso y por que le importa al hincha. Marca con advertencia donde Ole no esta.
+
+PERLITA DEL DIA - 1 o 2 joyitas de color/viral con potencial de trafico.
+
+RECOMENDACION - 1 linea: por donde arrancaria la home hoy.
+
+TEMAS:
+{lineas}
+
+CANDIDATAS A PERLITA:
+{bloque_perlitas}"""
+
+
+def prompt_parte_internacional(resultados: dict) -> str:
+    temas = _temas_por_origen(resultados, "int", 25)
+    relevantes = notas_exterior_relevantes(resultados, 15)
+    lineas = "\n".join(
+        f"{i+1}. {c['titulo'][:130]} - {c['cant_medios']} medios"
+        for i, c in enumerate(temas)
+    )
+    bloque_ar = "\n".join(f"  - [{r['fuente']['nombre']}] {r['titulo'][:120]}"
+                           + (f" ({' / '.join(r['entidades'][:3])})" if r['entidades'] else "")
+                           for r in relevantes) or "  (nada con gancho argentino ahora)"
+    return f"""Sos editor de la seccion internacional de un diario deportivo argentino.
+Este es el parte del futbol MUNDIAL de la manana.{bloque_criterios()}
+
+Escribi en espanol rioplatense:
+
+PANORAMA INTERNACIONAL - 3 lineas: que domina el futbol mundial hoy (ligas,
+Champions, mercado europeo, figuras).
+
+TEMAS DEL MUNDO (una linea cada uno, agrupa por pais/liga): que paso y por que importa.
+
+IMPACTO ARGENTINO - la seccion clave: de todo lo internacional, que le toca
+directamente a un hincha argentino (jugadores argentinos en el exterior, rivales
+de la Seleccion, nombres que suenan para el futbol local). Una linea por tema,
+con el angulo para trabajarlo desde aca.
+
+TEMAS INTERNACIONALES:
+{lineas}
+
+NOTAS DEL EXTERIOR CON GANCHO ARGENTINO:
+{bloque_ar}"""
+
 
 def prompt_informe_ole(resultados: dict, analisis: dict, temas_editor: str = "") -> str:
     tendencias = calcular_tendencias(resultados)
