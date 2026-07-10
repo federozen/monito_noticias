@@ -287,6 +287,50 @@ def main():
         print(f"6) Digest Olé: {len(nuevas_ole)} notas nuevas · "
               f"telegram {'ok (silencioso)' if ok_d else 'no configurado'}")
 
+    # ── PARTE INTELIGENTE (IA, modelo económico, una vez al día tras las 10am) ──
+    if not simulacro:
+        _parte_inteligente(resultados)
+
+
+def _parte_inteligente(resultados: dict):
+    """Genera y envía por Telegram el parte nacional y el internacional, una vez
+    por día cada uno, después de las 10am. Usa el modelo económico para bajar el
+    costo. La API key va en el secreto ANTHROPIC_API_KEY de GitHub."""
+    from datetime import datetime
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return  # sin key configurada, no hace nada (silencioso)
+
+    ahora = datetime.now(mem._TZ_AR)
+    hoy = ahora.strftime("%Y-%m-%d")
+    if ahora.hour < 10:
+        return  # esperar a que el vigía haya corrido varias veces en la mañana
+
+    import monitor_core as mc
+    # cada parte se manda una sola vez por día (marca en Config vía Snapshot no;
+    # usamos una pestaña simple de control)
+    ya = mem.partes_enviados_hoy(hoy)
+
+    if "nac" not in ya:
+        try:
+            texto = mc.call_claude(mc.prompt_parte_nacional(resultados), api_key,
+                                   max_tokens=1600, modelo=mc.MODELO_ECONOMICO)
+            enviar_telegram(f"🇦🇷 <b>PARTE NACIONAL</b> · {ahora.strftime('%d/%m %H:%M')}\n\n{texto}")
+            mem.marcar_parte_enviado(hoy, "nac")
+            print(f"   parte nacional: enviado (modelo económico)")
+        except Exception as e:
+            print(f"   parte nacional falló: {e}")
+
+    if "int" not in ya:
+        try:
+            texto = mc.call_claude(mc.prompt_parte_internacional(resultados), api_key,
+                                   max_tokens=1600, modelo=mc.MODELO_ECONOMICO)
+            enviar_telegram(f"🌍 <b>PARTE INTERNACIONAL</b> · {ahora.strftime('%d/%m %H:%M')}\n\n{texto}")
+            mem.marcar_parte_enviado(hoy, "int")
+            print(f"   parte internacional: enviado (modelo económico)")
+        except Exception as e:
+            print(f"   parte internacional falló: {e}")
+
 
 if __name__ == "__main__":
     main()

@@ -95,6 +95,10 @@ if "ultima_act" not in st.session_state:
     st.session_state.ultima_act = None
 if "analisis_general" not in st.session_state:
     st.session_state.analisis_general = ""
+if "parte_nac" not in st.session_state:
+    st.session_state.parte_nac = ""
+if "parte_int" not in st.session_state:
+    st.session_state.parte_int = ""
 if "informe_ole" not in st.session_state:
     st.session_state.informe_ole = ""
 if "ole_analisis" not in st.session_state:
@@ -378,6 +382,38 @@ with st.sidebar:
                     st.success("✔ Análisis generado")
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+    _cpn, _cpi = st.columns(2)
+    with _cpn:
+        if st.button("🇦🇷 Parte Nac.", use_container_width=True, help="Parte del fútbol argentino (modelo económico)"):
+            if not api_key:
+                st.error("Ingresá tu API key")
+            elif not st.session_state.resultados:
+                st.error("Actualizá las fuentes primero")
+            else:
+                with st.spinner("Parte nacional..."):
+                    try:
+                        st.session_state.parte_nac = call_claude(
+                            prompt_parte_nacional(st.session_state.resultados),
+                            api_key, 1600, modelo=MODELO_ECONOMICO)
+                        st.success("✔ Listo")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+    with _cpi:
+        if st.button("🌍 Parte Int.", use_container_width=True, help="Parte del fútbol mundial + impacto argentino (modelo económico)"):
+            if not api_key:
+                st.error("Ingresá tu API key")
+            elif not st.session_state.resultados:
+                st.error("Actualizá las fuentes primero")
+            else:
+                with st.spinner("Parte internacional..."):
+                    try:
+                        st.session_state.parte_int = call_claude(
+                            prompt_parte_internacional(st.session_state.resultados),
+                            api_key, 1600, modelo=MODELO_ECONOMICO)
+                        st.success("✔ Listo")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
 
     temas_editor = st.text_area(
         "Temas que querés tratar (uno por línea; vacío = el sistema sugiere)",
@@ -1097,7 +1133,7 @@ with tab_tend:
 
 # ─── TAB IA ──────────────────────────────────────────────────────────────────
 with tab_ia:
-    ia1, ia2, ia3 = st.tabs(["✦ Análisis General", "🟢 Informe Olé", "📋 Exclusivos (todos)"])
+    ia1, ia_partes, ia2, ia3 = st.tabs(["✦ Análisis General", "📰 Partes Nac/Int", "🟢 Informe Olé", "📋 Exclusivos (todos)"])
 
     with ia1:
         if st.session_state.analisis_general:
@@ -1115,6 +1151,22 @@ with tab_ia:
             )
         else:
             st.info("Hacé clic en **✦ Análisis General** en el panel izquierdo (requiere API key).")
+
+    with ia_partes:
+        st.caption("Partes diarios con el modelo económico. También se mandan solos por Telegram tras las 10am.")
+        pcol1, pcol2 = st.columns(2)
+        with pcol1:
+            st.markdown("#### 🇦🇷 Nacional")
+            if st.session_state.parte_nac:
+                st.markdown(st.session_state.parte_nac)
+            else:
+                st.info("Generá el parte nacional con el botón de la izquierda.")
+        with pcol2:
+            st.markdown("#### 🌍 Internacional")
+            if st.session_state.parte_int:
+                st.markdown(st.session_state.parte_int)
+            else:
+                st.info("Generá el parte internacional con el botón de la izquierda.")
 
     with ia2:
         if st.session_state.informe_ole:

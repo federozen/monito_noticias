@@ -37,6 +37,7 @@ PASES_HEADERS = ["PrimeraVez", "UltimaVez", "Titulo", "MediosMax", "Apariciones"
 ENTIDADES_HEADERS = ["Ranking", "Entidad", "Menciones", "Medios", "Olé", "Actualizado"]
 ENTHIST_HEADERS = ["Fecha", "Hora", "Entidad", "Menciones"]
 TERMO_HEADERS = ["Entidad", "Tendencia", "HoyProm", "AntesProm", "Variacion", "Actualizado"]
+PARTES_HEADERS = ["Fecha", "Parte", "Enviado"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -175,6 +176,33 @@ def debe_correr(min_minutos: int = 55) -> bool:
         return transcurrido >= timedelta(minutes=min_minutos)
     except Exception:
         return True
+
+
+def partes_enviados_hoy(fecha: str) -> set:
+    """Devuelve el set de partes ya enviados hoy ('nac', 'int')."""
+    try:
+        ws = _ws("PartesLog", PARTES_HEADERS)
+        return {f[1] for f in ws.get_all_values()[1:]
+                if len(f) >= 2 and f[0] == fecha}
+    except Exception:
+        return set()
+
+
+def marcar_parte_enviado(fecha: str, parte: str) -> bool:
+    """Registra que un parte se envió hoy, para no repetirlo."""
+    try:
+        ws = _ws("PartesLog", PARTES_HEADERS)
+        ws.append_row([fecha, parte, datetime.now(_TZ_AR).strftime("%H:%M")],
+                      value_input_option="RAW")
+        # poda: dejar solo últimos 30 días
+        todas = ws.get_all_values()
+        if len(todas) > 120:
+            ws.clear()
+            ws.update(range_name="A1", values=[PARTES_HEADERS] + todas[-90:],
+                      value_input_option="RAW")
+        return True
+    except Exception:
+        return False
 
 
 def marcar_corrida_ok() -> bool:
