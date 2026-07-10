@@ -1825,58 +1825,73 @@ def _temas_por_origen(resultados: dict, origen: str, top: int = 25) -> list:
 
 
 def prompt_parte_nacional(resultados: dict) -> str:
-    temas = _temas_por_origen(resultados, "nac", 25)
-    perlitas = candidatas_perlitas(resultados)[:8]
+    """Análisis general enfocado en el fútbol argentino (mismo nivel que el
+    Análisis General, pero solo temas que cubren los medios nacionales)."""
+    tendencias = _temas_por_origen(resultados, "nac", 30)
+    perlitas = candidatas_perlitas(resultados)
+    bloque_perlitas = "\n".join(f"  • [{f}] {t}" for f, t in perlitas) or "  (ninguna detectada en esta pasada)"
     lineas = "\n".join(
-        f"{i+1}. {c['titulo'][:130]} — {c['cant_medios']} medios · Ole: {'si' if c.get('tiene_ole') else 'NO'}"
-        for i, c in enumerate(temas)
+        f"{i+1}. {c['titulo'][:130]} — {c['cant_medios']} medios "
+        f"({c.get('nac', 0)} nac / {c.get('intl', 0)} int) · Olé: {'sí' if c.get('tiene_ole') else 'NO'}"
+        for i, c in enumerate(tendencias)
     )
-    bloque_perlitas = "\n".join(f"  - [{f}] {t}" for f, t in perlitas) or "  (ninguna)"
-    return f"""Sos editor jefe de un diario deportivo argentino. Este es el parte de
-la manana del futbol ARGENTINO: los temas que mas mueven los medios locales ahora.{bloque_criterios()}
+    return f"""Sos editor jefe de un diario deportivo argentino. Abajo están los temas
+del FÚTBOL ARGENTINO que más medios están cubriendo AHORA, ya agrupados y
+ordenados por volumen.{bloque_criterios()}
 
-Escribi un parte breve y accionable en espanol rioplatense:
+Escribí un RESUMEN EJECUTIVO en español rioplatense, directo:
 
-LO QUE MANDA HOY - 3 lineas: que domina la agenda del futbol argentino.
+LECTURA GENERAL — 3 líneas: qué domina la conversación del fútbol argentino y qué tono tiene el día.
 
-TEMAS (una linea cada uno, agrupa por River / Boca / otros clubes / Seleccion /
-mercado local): que paso y por que le importa al hincha. Marca con advertencia donde Ole no esta.
+LOS TEMAS, agrupados por eje (River / Boca / otros clubes / Selección / mercado local / otros).
+Por cada tema, UNA sola línea: qué pasó y por qué importa para el hincha argentino.
+No repitas el título textual: interpretalo. Marcá con ⚠️ los temas donde Olé no tiene cobertura.
 
-PERLITA DEL DIA - 1 o 2 joyitas de color/viral con potencial de trafico.
+DATO SALIENTE — 1 línea: la asimetría o el patrón más llamativo del panorama local.
 
-RECOMENDACION - 1 linea: por donde arrancaria la home hoy.
+PERLITAS — 3 a 5 joyitas con potencial de tráfico: lo viral, lo insólito, la
+sorpresa, el gesto, el récord raro. Elegilas de la canasta de candidatas (y del
+top si alguna califica). Por cada una: por qué puede rendir en una línea +
+un título con gancho. Si una candidata es puro clickbait sin sustancia, salteala.
 
 TEMAS:
 {lineas}
 
-CANDIDATAS A PERLITA:
+CANDIDATAS A PERLITA (detectadas por señales de viralidad/rareza):
 {bloque_perlitas}"""
 
 
 def prompt_parte_internacional(resultados: dict) -> str:
-    temas = _temas_por_origen(resultados, "int", 25)
+    """Análisis general del fútbol internacional (mismo nivel que el Análisis
+    General) más una sección enfocada en impacto argentino."""
+    tendencias = _temas_por_origen(resultados, "int", 30)
     relevantes = notas_exterior_relevantes(resultados, 15)
     lineas = "\n".join(
-        f"{i+1}. {c['titulo'][:130]} - {c['cant_medios']} medios"
-        for i, c in enumerate(temas)
+        f"{i+1}. {c['titulo'][:130]} — {c['cant_medios']} medios"
+        for i, c in enumerate(tendencias)
     )
-    bloque_ar = "\n".join(f"  - [{r['fuente']['nombre']}] {r['titulo'][:120]}"
-                           + (f" ({' / '.join(r['entidades'][:3])})" if r['entidades'] else "")
+    bloque_ar = "\n".join(f"  • [{r['fuente']['nombre']}] {r['titulo'][:120]}"
+                           + (f" ({' · '.join(r['entidades'][:3])})" if r['entidades'] else "")
                            for r in relevantes) or "  (nada con gancho argentino ahora)"
-    return f"""Sos editor de la seccion internacional de un diario deportivo argentino.
-Este es el parte del futbol MUNDIAL de la manana.{bloque_criterios()}
+    return f"""Sos editor de la sección internacional de un diario deportivo argentino.
+Abajo están los temas del FÚTBOL MUNDIAL que más medios están cubriendo AHORA,
+ya agrupados y ordenados por volumen.{bloque_criterios()}
 
-Escribi en espanol rioplatense:
+Escribí un RESUMEN EJECUTIVO en español rioplatense, directo:
 
-PANORAMA INTERNACIONAL - 3 lineas: que domina el futbol mundial hoy (ligas,
-Champions, mercado europeo, figuras).
+PANORAMA INTERNACIONAL — 3 líneas: qué domina el fútbol mundial hoy (ligas,
+Champions, mercado europeo, figuras) y qué tono tiene.
 
-TEMAS DEL MUNDO (una linea cada uno, agrupa por pais/liga): que paso y por que importa.
+LOS TEMAS DEL MUNDO, agrupados por eje (España / Italia / Inglaterra / mercado
+europeo / Champions y copas / Brasil y Sudamérica / otros). Por cada tema, UNA
+sola línea: qué pasó y por qué importa. No repitas el título: interpretalo.
 
-IMPACTO ARGENTINO - la seccion clave: de todo lo internacional, que le toca
+DATO SALIENTE — 1 línea: el patrón o la historia más llamativa del fútbol mundial hoy.
+
+🧉 IMPACTO ARGENTINO — la sección clave: de todo lo internacional, qué le toca
 directamente a un hincha argentino (jugadores argentinos en el exterior, rivales
-de la Seleccion, nombres que suenan para el futbol local). Una linea por tema,
-con el angulo para trabajarlo desde aca.
+de la Selección, nombres que suenan para el fútbol local). Por cada uno, una
+línea con el ángulo para trabajarlo desde acá.
 
 TEMAS INTERNACIONALES:
 {lineas}

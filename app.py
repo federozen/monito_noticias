@@ -87,6 +87,7 @@ from monitor_core import *
 from monitor_core import _norm_texto
 from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
+from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
 import sheets_memoria
 
 if "resultados" not in st.session_state:
@@ -385,7 +386,7 @@ with st.sidebar:
 
     _cpn, _cpi = st.columns(2)
     with _cpn:
-        if st.button("🇦🇷 Parte Nac.", use_container_width=True, help="Parte del fútbol argentino (modelo económico)"):
+        if st.button("🇦🇷 Parte Nac.", use_container_width=True, help="Análisis del fútbol argentino (calidad completa)"):
             if not api_key:
                 st.error("Ingresá tu API key")
             elif not st.session_state.resultados:
@@ -395,12 +396,12 @@ with st.sidebar:
                     try:
                         st.session_state.parte_nac = call_claude(
                             prompt_parte_nacional(st.session_state.resultados),
-                            api_key, 1600, modelo=MODELO_ECONOMICO)
+                            api_key, 5000)
                         st.success("✔ Listo")
                     except Exception as e:
                         st.error(f"Error: {e}")
     with _cpi:
-        if st.button("🌍 Parte Int.", use_container_width=True, help="Parte del fútbol mundial + impacto argentino (modelo económico)"):
+        if st.button("🌍 Parte Int.", use_container_width=True, help="Análisis del fútbol mundial + impacto argentino (calidad completa)"):
             if not api_key:
                 st.error("Ingresá tu API key")
             elif not st.session_state.resultados:
@@ -410,7 +411,7 @@ with st.sidebar:
                     try:
                         st.session_state.parte_int = call_claude(
                             prompt_parte_internacional(st.session_state.resultados),
-                            api_key, 1600, modelo=MODELO_ECONOMICO)
+                            api_key, 5000)
                         st.success("✔ Listo")
                     except Exception as e:
                         st.error(f"Error: {e}")
@@ -1153,7 +1154,7 @@ with tab_ia:
             st.info("Hacé clic en **✦ Análisis General** en el panel izquierdo (requiere API key).")
 
     with ia_partes:
-        st.caption("Partes diarios con el modelo económico. También se mandan solos por Telegram tras las 10am.")
+        st.caption("Análisis del día separado por local e internacional, con la misma calidad que el Análisis General.")
         pcol1, pcol2 = st.columns(2)
         with pcol1:
             st.markdown("#### 🇦🇷 Nacional")
