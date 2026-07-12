@@ -748,6 +748,78 @@ def filtrar_por_tema(resultados: dict, filtro_id: str, solo_ar: bool = False,
     return out[:max_items]
 
 
+
+# ─── MÉTRICAS: parser del Reporte Diario de Olé (BigData AGEA) ───────────────
+def _filas_por_columnas_pdf(page, cortes):
+    from collections import defaultdict
+    lineas = defaultdict(list)
+    for w in page.extract_words():
+        lineas[round(w["top"])].append(w)
+    filas = []
+    for t in sorted(lineas):
+        ws = sorted(lineas[t], key=lambda w: w["x0"])
+        cols = [""] * (len(cortes) + 1)
+        for w in ws:
+            i = 0
+            while i < len(cortes) and w["x0"] >= cortes[i]:
+                i += 1
+            cols[i] = (cols[i] + " " + w["text"]).strip()
+        filas.append(cols)
+    return filas
+
+
+def parsear_reporte_ole(ruta_o_bytes) -> dict:
+    """Extrae del Reporte Diario de Olé (PDF de BigData): fecha, notas más
+    vistas (acumulado), publicadas ese día y menos vistas, con sus páginas
+    vistas. Requiere pdfplumber (import interno para no romper al vigía)."""
+    import pdfplumber
+    pdf = pdfplumber.open(ruta_o_bytes)
+    out = {"fecha": None, "mas_vistas": [], "publicadas_hoy": [], "menos_vistas": []}
+    for page in pdf.pages:
+        texto = page.extract_text() or ""
+        primera = texto.split("\n")[0] if texto else ""
+        if out["fecha"] is None:
+            m = re.search(r"\b(\d{2}/\d{2})\b", primera)
+            if m:
+                out["fecha"] = m.group(1)
+        if "Más Vistas" in primera and "Publicadas" in primera:
+            destino = "publicadas_hoy"
+        elif "Más Vistas" in primera and "Top de Notas" in primera:
+            destino = "mas_vistas"
+        elif "Menos Vistas" in primera:
+            destino = "menos_vistas"
+        else:
+            continue
+        for cols in _filas_por_columnas_pdf(page, [500, 615, 720]):
+            titulo, seccion, pub, vistas = cols[0], cols[1], cols[2], cols[3]
+            v = vistas.replace(".", "").replace(",", "")
+            if not titulo or not v.isdigit():
+                continue
+            if titulo.startswith(("Nota", "NNoott", "Olé |")):
+                continue
+            out[destino].append({"titulo": titulo, "seccion": seccion,
+                                 "publicacion": pub, "vistas": int(v)})
+    return out
+
+
+def cruzar_metricas(notas: list, historial: list = None,
+                    entidades_extra: str = "") -> list:
+    """Enriquece cada nota leída con lo que el sistema sabe: entidades que
+    menciona y si el tema estaba en el panorama (Historial de temas calientes).
+    Sin IA: matching de títulos."""
+    dic = dic_entidades(entidades_extra)
+    hist_keys = [normalizar_titulo(h.get("titulo", h) if isinstance(h, dict) else h)
+                 for h in (historial or [])]
+    out = []
+    for n in notas:
+        keys = normalizar_titulo(n["titulo"])
+        en_panorama = any(solapamiento(keys, hk) >= 0.35 for hk in hist_keys if hk)
+        out.append({**n,
+                    "entidades": detectar_entidades(n["titulo"], dic),
+                    "en_panorama": en_panorama})
+    return out
+
+
 # ─── AGENDA ACCIONABLE + MOMENTUM ─────────────────────────────────────────────
 def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     """Compara cada cluster actual con el más parecido del snapshot anterior.
@@ -941,7 +1013,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v20 · +filtros"
+CORE_VERSION = "núcleo v21 · métricas"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
