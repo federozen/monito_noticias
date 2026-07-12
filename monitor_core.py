@@ -1974,6 +1974,20 @@ NOTAS DEL EXTERIOR CON GANCHO ARGENTINO:
 {bloque_ar}"""
 
 
+def exportar_recorte_argentina(resultados: dict) -> str:
+    """Recorte COMPLETO (sin tope) de titulares internacionales que mencionan a
+    la Argentina, en texto plano listo para pegar en cualquier IA."""
+    notas = notas_exterior_relevantes(resultados, max_items=1000)
+    from datetime import datetime
+    hoy = datetime.now().strftime("%d/%m/%Y")
+    lineas = [f"TITULARES DE MEDIOS INTERNACIONALES QUE MENCIONAN A ARGENTINA",
+              f"Recorte del panorama (~últimas 24-48h) · {hoy} · {len(notas)} titulares",
+              ""]
+    for n in notas:
+        lineas.append(f"[{n['fuente']['nombre']}] {n['titulo']}")
+    return "\n".join(lineas)
+
+
 def prompt_sentimiento_argentina(resultados: dict) -> str:
     """Análisis de sentimiento: cómo tratan HOY los medios internacionales a la
     Argentina (Selección, jugadores, clubes). Sobre el recorte de notas del
