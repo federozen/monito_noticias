@@ -367,7 +367,7 @@ def agregar_a_agenda(items: list, origen: str):
 
 
 # ── Historial (registro acumulado para inteligencia semanal) ─────────────────
-def registrar_historial(tendencias: list, max_temas: int = 30):
+def registrar_historial(tendencias: list, max_temas: int = 70):
     """Deja constancia compacta de qué se publicó en esta corrida.
     Solo clusters con 2+ medios (el resto es ruido para el análisis)."""
     try:
