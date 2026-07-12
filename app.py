@@ -468,6 +468,7 @@ tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab
     "✍️ Nota Rápida",
     "🌡️ Tono Editorial",
     f"🧺 Canasta ({len(st.session_state.canasta)})",
+    "📈 Resultados",
 ])
 
 # ─── TAB AGENDA ──────────────────────────────────────────────────────────────
