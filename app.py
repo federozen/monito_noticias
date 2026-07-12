@@ -89,7 +89,7 @@ from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
 from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
-from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina  # noqa: F401
+from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional  # noqa: F401
 import sheets_memoria
 
 if "resultados" not in st.session_state:
@@ -730,13 +730,20 @@ with tab_arg_ext:
             st.info("Por ahora no hay notas del exterior con gancho argentino en el panorama.")
         else:
             recorte_txt = exportar_recorte_argentina(st.session_state.resultados)
+            panorama_txt = exportar_panorama_internacional(st.session_state.resultados)
             n_recorte = recorte_txt.count("[")
-            cdesc, cprompt = st.columns([1, 1])
+            n_pan = panorama_txt.count("\n") - 4
+            cdesc, cpan, cprompt = st.columns([1, 1, 1])
             with cdesc:
                 st.download_button(
-                    f"⬇️ Descargar recorte completo ({n_recorte} titulares)",
+                    f"⬇️ Recorte Argentina ({n_recorte})",
                     recorte_txt, file_name="recorte_argentina_exterior.txt",
                     mime="text/plain", use_container_width=True, key="dl_recorte_ar")
+            with cpan:
+                st.download_button(
+                    f"⬇️ Panorama int. completo (~{max(n_pan,0)})",
+                    panorama_txt, file_name="panorama_internacional_completo.txt",
+                    mime="text/plain", use_container_width=True, key="dl_panorama_int")
             with cprompt:
                 with st.expander("📋 Prompt sugerido para pegar junto al recorte"):
                     st.code("""Sos analista de medios. Te paso titulares de prensa internacional que mencionan a Argentina (el medio entre corchetes indica el país). Hacé un análisis de sentimiento en español rioplatense: 1) Termómetro general (admiración/respeto/neutro/crítica/burla). 2) Desglose por tema (Selección, Messi, jugadores en Europa, clubes/mercado) con un titular textual de prueba por cada uno. 3) Desglose por país: quién elogia y quién pega. 4) El titular más elogioso y el más hostil. 5) 2-3 ideas de título para un diario deportivo argentino que salgan del análisis.""", language=None)

@@ -1974,18 +1974,61 @@ NOTAS DEL EXTERIOR CON GANCHO ARGENTINO:
 {bloque_ar}"""
 
 
+def _fuentes_int_reales():
+    return [f for f in TODAS_FUENTES
+            if f["id"] not in FUENTES_NAC_IDS and f["id"] not in FUENTES_ESP_IDS]
+
+
 def exportar_recorte_argentina(resultados: dict) -> str:
-    """Recorte COMPLETO (sin tope) de titulares internacionales que mencionan a
-    la Argentina, en texto plano listo para pegar en cualquier IA."""
-    notas = notas_exterior_relevantes(resultados, max_items=1000)
+    """Recorte de titulares internacionales que mencionan a la Argentina.
+    Dedup POR MEDIO (no global): si tres medios titulan la misma historia,
+    entran las tres versiones — clave para el sentimiento por país."""
     from datetime import datetime
+    lineas_notas = []
+    for f in _fuentes_int_reales():
+        vistos = set()
+        for n in resultados.get(f["id"], []):
+            t = n.get("titulo", "")
+            if not relevancia_argentina(t):
+                continue
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            lineas_notas.append(f"[{f['nombre']}] {t}")
     hoy = datetime.now().strftime("%d/%m/%Y")
-    lineas = [f"TITULARES DE MEDIOS INTERNACIONALES QUE MENCIONAN A ARGENTINA",
-              f"Recorte del panorama (~últimas 24-48h) · {hoy} · {len(notas)} titulares",
-              ""]
-    for n in notas:
-        lineas.append(f"[{n['fuente']['nombre']}] {n['titulo']}")
-    return "\n".join(lineas)
+    return "\n".join(
+        ["TITULARES DE MEDIOS INTERNACIONALES QUE MENCIONAN A ARGENTINA",
+         f"Recorte del panorama (~últimas 24-48h) · {hoy} · {len(lineas_notas)} titulares "
+         "(cada medio conserva su propia versión de cada historia)", ""]
+        + lineas_notas)
+
+
+def exportar_panorama_internacional(resultados: dict) -> str:
+    """TODOS los titulares del panorama internacional, sin filtro ni tope,
+    agrupados por medio. Para que la IA del editor haga el recorte con
+    contexto completo (nada queda afuera)."""
+    from datetime import datetime
+    partes, total = [], 0
+    for f in _fuentes_int_reales():
+        notas = resultados.get(f["id"], [])
+        if not notas:
+            continue
+        partes.append(f"\n=== {f['nombre']} ({len(notas)} titulares) ===")
+        vistos = set()
+        for n in notas:
+            t = n.get("titulo", "")
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            partes.append(t)
+            total += 1
+    hoy = datetime.now().strftime("%d/%m/%Y")
+    encabezado = ["PANORAMA INTERNACIONAL COMPLETO — TODOS LOS TITULARES",
+                  f"~últimas 24-48h · {hoy} · {total} titulares de "
+                  f"{len([f for f in _fuentes_int_reales() if resultados.get(f['id'])])} medios", ""]
+    return "\n".join(encabezado + partes)
 
 
 def prompt_sentimiento_argentina(resultados: dict) -> str:
