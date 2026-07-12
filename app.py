@@ -88,6 +88,7 @@ from monitor_core import _norm_texto
 from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
+from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
 import sheets_memoria
 
 if "resultados" not in st.session_state:
@@ -453,7 +454,7 @@ ole_analisis = st.session_state.ole_analisis
 tendencias = st.session_state.tendencias
 
 # ─── TABS PRINCIPALES ────────────────────────────────────────────────────────
-tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta = st.tabs([
+tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta, tab_result = st.tabs([
     "🎯 Agenda",
     "🔎 Buscar",
     f"🇦🇷 Nacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_NAC)})",
@@ -1956,3 +1957,62 @@ st.caption(
     f"Similitud semántica Jaccard (umbral: {SIMILITUD_UMBRAL}) · "
     f"{len(TODAS_FUENTES)} medios"
 )
+
+
+# ─── TAB RESULTADOS (métricas reales de Olé) ─────────────────────────────────
+with tab_result:
+    st.subheader("📈 Resultados — qué rindió de verdad")
+    st.caption("Subí el Reporte Diario (PDF de BigData) y el sistema cruza las notas más leídas con su panorama: qué entidades rinden y cuántas de las top estaban detectadas como tema caliente.")
+    pdf_subido = st.file_uploader("Reporte Diario de Olé (.pdf)", type=["pdf"], key="uploader_metricas")
+    if pdf_subido is not None:
+        try:
+            rep = parsear_reporte_ole(pdf_subido)
+            historial = sheets_memoria.leer_historial(4) if sheets_memoria.disponible() else []
+            cfg_ent = ""
+            try:
+                cfg_ent = sheets_memoria.leer_config().get("entidades_extra", "")
+            except Exception:
+                pass
+            top = cruzar_metricas(rep["mas_vistas"], historial, cfg_ent)
+            flojas = cruzar_metricas(rep["menos_vistas"], historial, cfg_ent)
+            for n in top: n["lista"] = "top"
+            for n in flojas: n["lista"] = "floja"
+
+            en_pan = sum(1 for n in top if n["en_panorama"])
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Fecha del reporte", rep["fecha"] or "—")
+            c2.metric("Top que estaba en tu panorama", f"{en_pan}/{len(top)}")
+            vistas_top = sum(n["vistas"] for n in top)
+            c3.metric("Vistas del top 30", f"{vistas_top:,}".replace(",", "."))
+
+            # ranking de entidades por vistas reales
+            from collections import defaultdict
+            vistas_ent = defaultdict(int)
+            for n in top:
+                for e in n["entidades"]:
+                    vistas_ent[e] += n["vistas"]
+            if vistas_ent:
+                st.markdown("**💰 Qué entidades trajeron lectores hoy:**")
+                rank = sorted(vistas_ent.items(), key=lambda x: -x[1])[:8]
+                st.markdown(" · ".join(f"**{e}** {v:,}".replace(",", ".") for e, v in rank))
+
+            st.markdown("---")
+            st.markdown("**Top 30 más vistas** (🔥 = estaba en tu panorama de temas):")
+            for n in top:
+                icono = "🔥" if n["en_panorama"] else "▫️"
+                ents = f" — _{', '.join(n['entidades'][:3])}_" if n["entidades"] else ""
+                st.markdown(f"{icono} **{n['vistas']:,}**".replace(",", ".") + f" · {n['titulo'][:110]}{ents}")
+
+            with st.expander(f"Las 30 menos vistas del día"):
+                for n in flojas:
+                    st.markdown(f"▪️ {n['vistas']} · {n['titulo'][:110]}")
+
+            if sheets_memoria.disponible():
+                if st.button("💾 Guardar en la planilla", type="primary", key="btn_guardar_metricas"):
+                    n_guard = sheets_memoria.guardar_metricas(rep["fecha"] or "s/f", top + flojas)
+                    if n_guard:
+                        st.success(f"✔ {n_guard} notas guardadas en la pestaña Métricas — el archivo se acumula día a día")
+                    else:
+                        st.error("No se pudo guardar (revisá la conexión con la planilla)")
+        except Exception as e:
+            st.error(f"No pude leer el PDF: {e}")
