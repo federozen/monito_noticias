@@ -578,7 +578,9 @@ def notas_exterior_relevantes(resultados: dict, max_items: int = 40) -> list:
     Devuelve [{fuente, titulo, url, entidades}, ...] dedupeado."""
     out, vistos = [], set()
     for f in TODAS_FUENTES:
-        if f["id"] in FUENTES_NAC_IDS:
+        # solo medios internacionales de verdad: afuera los nacionales Y el
+        # grupo Primicias (GNews de River/Boca/Messi etc., que traen prensa argentina)
+        if f["id"] in FUENTES_NAC_IDS or f["id"] in FUENTES_ESP_IDS:
             continue
         for n in resultados.get(f["id"], []):
             t = n.get("titulo", "")
@@ -1970,6 +1972,49 @@ TEMAS INTERNACIONALES:
 
 NOTAS DEL EXTERIOR CON GANCHO ARGENTINO:
 {bloque_ar}"""
+
+
+def prompt_sentimiento_argentina(resultados: dict) -> str:
+    """Análisis de sentimiento: cómo tratan HOY los medios internacionales a la
+    Argentina (Selección, jugadores, clubes). Sobre el recorte de notas del
+    exterior con gancho argentino del panorama actual (~últimas 24-48h)."""
+    notas = notas_exterior_relevantes(resultados, 60)
+    listado = "\n".join(
+        f"  • [{n['fuente']['nombre']}] {n['titulo'][:130]}"
+        + (f"  ({' · '.join(n['entidades'][:3])})" if n['entidades'] else "")
+        for n in notas
+    ) or "  (sin notas del exterior con gancho argentino en el panorama)"
+    return f"""Sos analista de medios de un diario deportivo argentino. Abajo están los
+titulares que los medios INTERNACIONALES publicaron en las últimas 24-48 horas
+mencionando a la Argentina: su Selección, sus jugadores en el mundo, sus clubes,
+sus DTs. El nombre de cada medio indica su origen (Marca/AS España, Gazzetta/
+Corriere/Sky Italia, L'Équipe Francia, BBC/Guardian/Sky Inglaterra, Globo/GE
+Brasil, Record Portugal, Bild Alemania, etc.).
+
+Hacé un ANÁLISIS DE SENTIMIENTO en español rioplatense:
+
+TERMÓMETRO GENERAL — ¿cómo nos está viendo el mundo hoy? Un veredicto en 2-3
+líneas con temperatura: admiración / respeto / neutralidad / crítica / burla.
+
+POR TEMA — el sentimiento desglosado (Selección / Messi / jugadores en Europa /
+clubes y mercado / otros). Por cada uno: el tono dominante y UN titular que lo
+pruebe (citalo entre comillas con su medio).
+
+POR PAÍS — ¿quién nos elogia y quién nos pega? Diferencias entre la prensa
+española, italiana, inglesa, brasileña, francesa. Una línea por país con datos.
+
+LO MÁS ELOGIOSO y LO MÁS CRÍTICO — el titular más admirativo y el más hostil
+del recorte, citados textuales con su medio.
+
+💡 IDEAS DE NOTA — 2-3 títulos estilo Olé que salgan de este análisis (del tipo
+"Los europeos te ningunean, Argentina" o "El mundo se rinde a..."), cada uno con
+una línea de por qué rendiría.
+
+Basate SOLO en los titulares listados. Si el recorte es chico, aclaralo y no
+sobreinterpretes.
+
+TITULARES DEL EXTERIOR SOBRE ARGENTINA:
+{listado}"""
 
 
 def prompt_informe_ole(resultados: dict, analisis: dict, temas_editor: str = "") -> str:

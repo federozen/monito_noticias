@@ -89,6 +89,7 @@ from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
 from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
+from monitor_core import prompt_sentimiento_argentina  # noqa: F401
 import sheets_memoria
 
 if "resultados" not in st.session_state:
@@ -728,6 +729,20 @@ with tab_arg_ext:
         if not relevantes:
             st.info("Por ahora no hay notas del exterior con gancho argentino en el panorama.")
         else:
+            if st.button("🌡️ ¿Cómo nos ve el mundo? — análisis de sentimiento (IA)", key="btn_sent_ar"):
+                if not api_key:
+                    st.error("Ingresá tu API key")
+                else:
+                    with st.spinner("Leyendo el tono de la prensa internacional..."):
+                        try:
+                            st.session_state.sentimiento_ar = call_claude(
+                                prompt_sentimiento_argentina(st.session_state.resultados),
+                                api_key, 3500)
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+            if st.session_state.get("sentimiento_ar"):
+                st.markdown(st.session_state.sentimiento_ar)
+                st.markdown("---")
             st.caption(f"{len(relevantes)} notas detectadas · ordenadas por relevancia")
             for r in relevantes:
                 ents = " · ".join(r["entidades"][:4]) if r["entidades"] else ""
