@@ -38,7 +38,6 @@ ENTIDADES_HEADERS = ["Ranking", "Entidad", "Menciones", "Medios", "Olé", "Actua
 ENTHIST_HEADERS = ["Fecha", "Hora", "Entidad", "Menciones"]
 TERMO_HEADERS = ["Entidad", "Tendencia", "HoyProm", "AntesProm", "Variacion", "Actualizado"]
 PARTES_HEADERS = ["Fecha", "Parte", "Enviado"]
-METRICAS_HEADERS = ["Fecha", "Vistas", "Titulo", "Seccion", "Entidades", "EnPanorama", "Lista"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -177,36 +176,6 @@ def debe_correr(min_minutos: int = 55) -> bool:
         return transcurrido >= timedelta(minutes=min_minutos)
     except Exception:
         return True
-
-
-def guardar_metricas(fecha: str, filas_cruzadas: list) -> int:
-    """Guarda las notas del reporte diario ya cruzadas con el sistema.
-    Si la fecha ya existía, la reemplaza (podés re-subir el mismo reporte)."""
-    try:
-        ws = _ws("Métricas", METRICAS_HEADERS)
-        existentes = ws.get_all_values()
-        conservar = [f for f in existentes[1:] if len(f) >= 1 and f[0] != fecha]
-        nuevas = [[fecha, str(n.get("vistas", 0)), n.get("titulo", "")[:200],
-                   n.get("seccion", "")[:40],
-                   " · ".join(n.get("entidades", [])[:4]),
-                   "sí" if n.get("en_panorama") else "no",
-                   n.get("lista", "")] for n in filas_cruzadas]
-        ws.clear()
-        ws.update(range_name="A1", values=[METRICAS_HEADERS] + nuevas + conservar,
-                  value_input_option="RAW")
-        # poda a ~40 días de datos (30 filas/día aprox)
-        return len(nuevas)
-    except Exception:
-        return 0
-
-
-def leer_metricas(dias: int = 14) -> list:
-    """Lee las métricas acumuladas para análisis."""
-    try:
-        ws = _ws("Métricas", METRICAS_HEADERS)
-        return [dict(zip(METRICAS_HEADERS, f)) for f in ws.get_all_values()[1:]]
-    except Exception:
-        return []
 
 
 def partes_enviados_hoy(fecha: str) -> set:
