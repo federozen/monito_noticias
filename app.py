@@ -2017,3 +2017,87 @@ with tab_result:
                         st.error("No se pudo guardar (revisá la conexión con la planilla)")
         except Exception as e:
             st.error(f"No pude leer el PDF: {e}")
+
+    # ── Informe de patrones sobre las métricas acumuladas ──
+    st.markdown("---")
+    st.markdown("#### 🧠 Informe de patrones")
+    st.caption("Lee todas las métricas acumuladas en la planilla y busca patrones: qué entidades y secciones rinden, precisión del panorama, y recomendaciones. Mejora solo a medida que cargás más reportes.")
+    if st.button("Generar informe de patrones (IA)", key="btn_patrones"):
+        if not api_key:
+            st.error("Ingresá tu API key")
+        elif not sheets_memoria.disponible():
+            st.error("Sin conexión con la planilla")
+        else:
+            with st.spinner("Leyendo métricas acumuladas y buscando patrones..."):
+                try:
+                    datos = sheets_memoria.leer_metricas()
+                    if len(datos) < 30:
+                        st.warning(f"Solo hay {len(datos)} notas cargadas — el informe va a ser preliminar. Con 10-15 reportes guardados se pone serio.")
+                    if not datos:
+                        st.info("Todavía no hay métricas guardadas. Subí y guardá algún reporte primero.")
+                    else:
+                        from collections import defaultdict
+                        dias = sorted({d.get("Fecha", "") for d in datos if d.get("Fecha")})
+                        v_ent, c_ent = defaultdict(int), defaultdict(int)
+                        v_sec = defaultdict(int)
+                        top_rows = [d for d in datos if d.get("Lista") != "floja"]
+                        flojas = [d for d in datos if d.get("Lista") == "floja"]
+                        en_pan = 0
+                        for d in top_rows:
+                            v = int(d.get("Vistas", "0") or 0)
+                            for e in (d.get("Entidades", "") or "").split(" · "):
+                                if e.strip():
+                                    v_ent[e.strip()] += v
+                                    c_ent[e.strip()] += 1
+                            if d.get("Seccion"):
+                                v_sec[d["Seccion"]] += v
+                            if d.get("EnPanorama") == "sí":
+                                en_pan += 1
+                        rank_ent = sorted(v_ent.items(), key=lambda x: -x[1])[:15]
+                        rank_sec = sorted(v_sec.items(), key=lambda x: -x[1])[:12]
+                        mejores = sorted(top_rows, key=lambda d: -int(d.get("Vistas", "0") or 0))[:15]
+                        bloque_ent = "\n".join(f"  {e}: {v:,} vistas en {c_ent[e]} notas" for e, v in rank_ent)
+                        bloque_sec = "\n".join(f"  {s}: {v:,} vistas" for s, v in rank_sec)
+                        bloque_top = "\n".join(f"  {int(d.get('Vistas','0') or 0):,} · {d.get('Titulo','')[:100]}" for d in mejores)
+                        bloque_flojas = "\n".join(f"  {d.get('Vistas','0')} · {d.get('Titulo','')[:90]}" for d in flojas[:15])
+                        prompt_pat = f"""Sos analista de audiencias de Olé (diario deportivo argentino). Abajo tenés
+las métricas REALES de tráfico acumuladas de {len(dias)} día(s) ({', '.join(dias[:12])}):
+las notas más leídas con sus páginas vistas, entidades detectadas y sección, más
+una muestra de las que no funcionaron.
+
+Dato de contexto: {en_pan} de {len(top_rows)} notas top estaban detectadas como
+tema caliente por el sistema de monitoreo antes de rendir.
+
+Escribí un INFORME DE PATRONES en español rioplatense, directo y accionable:
+
+QUÉ RINDE — los 3-5 patrones más claros (entidades, secciones, tipos de nota que
+traccionan). Con números.
+
+QUÉ NO RINDE — 2-3 patrones de las notas flojas: qué tienen en común las que nadie lee.
+
+TÍTULOS — mirando los títulos de las top: ¿qué estructuras se repiten? (nombre propio,
+dos puntos, pregunta, cifra, "confirmado", etc.)
+
+PRECISIÓN DEL RADAR — con el dato de contexto: ¿el sistema de monitoreo está viendo
+venir lo que después rinde?
+
+3 RECOMENDACIONES concretas para la home de Olé basadas SOLO en estos datos.
+
+Si los datos son pocos ({len(dias)} días), aclaralo y sé prudente con las conclusiones.
+
+ENTIDADES POR VISTAS:
+{bloque_ent}
+
+SECCIONES POR VISTAS:
+{bloque_sec}
+
+LAS 15 NOTAS MÁS LEÍDAS:
+{bloque_top}
+
+MUESTRA DE NOTAS QUE NO FUNCIONARON:
+{bloque_flojas}"""
+                        st.session_state.informe_patrones = call_claude(prompt_pat, api_key, 4000)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+    if st.session_state.get("informe_patrones"):
+        st.markdown(st.session_state.informe_patrones)
