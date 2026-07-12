@@ -822,6 +822,119 @@ def cruzar_metricas(notas: list, historial: list = None,
     return out
 
 
+
+# ─── SEMÁFORO PREDICTIVO (se entrena con la pestaña Métricas) ────────────────
+def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
+                   en_panorama: bool = False) -> dict:
+    """Convierte una nota en el vector de características del modelo.
+    Mismo constructor para entrenar y para predecir (clave de consistencia)."""
+    t = titulo or ""
+    tn = _norm_texto(t)
+    ents = entidades if entidades is not None else detectar_entidades(t)
+    f = {
+        "len_titulo": min(len(t), 200) / 100.0,
+        "tiene_dospuntos": 1 if ":" in t else 0,
+        "tiene_cifra": 1 if re.search(r"\d", t) else 0,
+        "tiene_pregunta": 1 if "?" in t or "¿" in t else 0,
+        "tiene_comillas": 1 if '"' in t or "\u201c" in t else 0,
+        "n_entidades": len(ents),
+        "en_panorama": 1 if en_panorama else 0,
+    }
+    for e in ents[:5]:
+        f[f"ent_{e}"] = 1
+    if seccion:
+        f[f"sec_{seccion.strip()[:30]}"] = 1
+    for fid, conf in FILTROS_TEMATICOS.items():
+        if any(k in tn for k in conf["keywords"]):
+            f[f"tipo_{fid}"] = 1
+    return f
+
+
+def entrenar_semaforo(metricas: list) -> dict:
+    """Entrena el clasificador 🟢🟡🔴 con las filas de la pestaña Métricas.
+    Devuelve el paquete (modelos + métricas de evaluación) o un dict con error.
+    Import de sklearn adentro: el vigía no lo necesita ni lo carga."""
+    import math
+    from sklearn.feature_extraction import DictVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier
+
+    filas = [m for m in metricas if m.get("Titulo") and str(m.get("Vistas", "")).isdigit()]
+    if len(filas) < 150:
+        return {"error": f"Datos insuficientes: {len(filas)} notas (mínimo 150). Seguí cargando reportes."}
+
+    # etiquetas por terciles de log-vistas (verde/amarillo/rojo)
+    logs = sorted(math.log10(int(m["Vistas"]) + 1) for m in filas)
+    c1 = logs[len(logs) // 3]
+    c2 = logs[2 * len(logs) // 3]
+
+    def etiqueta(v):
+        lv = math.log10(int(v) + 1)
+        return "verde" if lv >= c2 else ("amarillo" if lv >= c1 else "rojo")
+
+    # orden temporal para el split honesto (entrenar pasado, testear futuro)
+    def clave_fecha(m):
+        p = (m.get("Fecha") or "0/0").split("/")
+        return (int(p[1]) if len(p) > 1 and p[1].isdigit() else 0,
+                int(p[0]) if p[0].isdigit() else 0)
+    filas.sort(key=clave_fecha)
+
+    X_raw, y = [], []
+    for m in filas:
+        ents = [e.strip() for e in (m.get("Entidades") or "").split("·") if e.strip()]
+        X_raw.append(_features_nota(m["Titulo"], m.get("Seccion", ""), ents,
+                                    m.get("EnPanorama") == "sí"))
+        y.append(etiqueta(m["Vistas"]))
+
+    corte = max(int(len(X_raw) * 0.8), len(X_raw) - 400)
+    vec = DictVectorizer(sparse=False)
+    Xtr = vec.fit_transform(X_raw[:corte]); ytr = y[:corte]
+    Xte = vec.transform(X_raw[corte:]);     yte = y[corte:]
+
+    base = max(set(ytr), key=ytr.count)
+    acc_base = sum(1 for v in yte if v == base) / max(len(yte), 1)
+
+    logit = LogisticRegression(max_iter=1000)
+    logit.fit(Xtr, ytr)
+    acc_logit = logit.score(Xte, yte) if len(yte) else 0.0
+
+    rf = RandomForestClassifier(n_estimators=200, min_samples_leaf=3, random_state=7)
+    rf.fit(Xtr, ytr)
+    acc_rf = rf.score(Xte, yte) if len(yte) else 0.0
+
+    ganador = ("rf", rf, acc_rf) if acc_rf >= acc_logit else ("logit", logit, acc_logit)
+    # factores globales interpretables (de la logística, que es la legible)
+    nombres = vec.get_feature_names_out()
+    idx_verde = list(logit.classes_).index("verde")
+    pesos = sorted(zip(nombres, logit.coef_[idx_verde]), key=lambda x: -x[1])
+    return {"vec": vec, "modelo": ganador[1], "tipo": ganador[0],
+            "acc": ganador[2], "acc_base": acc_base, "acc_logit": acc_logit,
+            "acc_rf": acc_rf, "n_train": len(ytr), "n_test": len(yte),
+            "clases": list(ganador[1].classes_),
+            "factores_verde": pesos[:8], "frena_verde": pesos[-5:],
+            "logit": logit, "preliminar": len(filas) < 500}
+
+
+def predecir_semaforo(pack: dict, titulo: str, seccion: str = "",
+                      en_panorama: bool = False) -> dict:
+    """Devuelve clase, probabilidades y razones para un título nuevo."""
+    f = _features_nota(titulo, seccion, None, en_panorama)
+    X = pack["vec"].transform([f])
+    probas = pack["modelo"].predict_proba(X)[0]
+    clases = list(pack["modelo"].classes_)
+    orden = sorted(zip(clases, probas), key=lambda x: -x[1])
+    pred = orden[0][0]
+    # razones: features activas ordenadas por su peso hacia la clase predicha (logística)
+    nombres = list(pack["vec"].get_feature_names_out())
+    idx = list(pack["logit"].classes_).index(pred)
+    coefs = pack["logit"].coef_[idx]
+    activos = [(n, coefs[i]) for i, n in enumerate(nombres) if X[0][i] != 0]
+    activos.sort(key=lambda x: -abs(x[1]))
+    return {"clase": pred, "probas": orden,
+            "empuja": [n for n, c in activos if c > 0][:4],
+            "frena": [n for n, c in activos if c < 0][:3]}
+
+
 # ─── AGENDA ACCIONABLE + MOMENTUM ─────────────────────────────────────────────
 def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     """Compara cada cluster actual con el más parecido del snapshot anterior.

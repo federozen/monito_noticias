@@ -90,6 +90,7 @@ from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
 from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
 from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional  # noqa: F401
+from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: F401
 import sheets_memoria
 
 if "resultados" not in st.session_state:
@@ -2134,3 +2135,57 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
                     st.error(f"Error: {e}")
     if st.session_state.get("informe_patrones"):
         st.markdown(st.session_state.informe_patrones)
+
+    # ── 🚦 Semáforo predictivo (se entrena con las Métricas acumuladas) ──
+    st.markdown("---")
+    st.markdown("#### 🚦 Semáforo predictivo")
+    st.caption("Entrena un clasificador con tus métricas reales y probá temas ANTES de encararlos: 🟢 rinde · 🟡 del montón · 🔴 no tracciona. Necesita 150+ notas guardadas; se pone serio con 500+.")
+    if st.button("Entrenar / actualizar el semáforo", key="btn_entrenar_sem"):
+        if not sheets_memoria.disponible():
+            st.error("Sin conexión con la planilla")
+        else:
+            with st.spinner("Entrenando con tus métricas..."):
+                try:
+                    pack = entrenar_semaforo(sheets_memoria.leer_metricas())
+                    if "error" in pack:
+                        st.warning(pack["error"])
+                    else:
+                        st.session_state.semaforo_pack = pack
+                        mejora = pack["acc"] - pack["acc_base"]
+                        st.success(f"✔ Entrenado con {pack['n_train']} notas · testeado en {pack['n_test']} posteriores")
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Precisión del modelo", f"{pack['acc']:.0%}")
+                        c2.metric("Base (adivinar lo común)", f"{pack['acc_base']:.0%}")
+                        c3.metric("Mejora real", f"+{mejora:.0%}")
+                        if pack.get("preliminar"):
+                            st.info("Modo preliminar: con menos de 500 notas, tomalo como orientativo.")
+                        if mejora < 0.05:
+                            st.warning("⚠️ El modelo todavía no le gana claramente a la base — necesita más datos o los patrones aún no emergen. No lo uses para decidir.")
+                        st.caption("Empujan a 🟢: " + " · ".join(n for n, _ in pack["factores_verde"][:6]))
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
+    if st.session_state.get("semaforo_pack"):
+        st.markdown("**Probar un tema:**")
+        ct1, ct2, ct3 = st.columns([3, 1.4, 1])
+        with ct1:
+            titulo_test = st.text_input("Título o tema", key="sem_titulo",
+                                        placeholder="ej: Mastantuono se lesiona en la práctica de River")
+        with ct2:
+            secciones_conocidas = ["(sin sección)", "Mundial | Mundial 2026", "River Plate",
+                                   "Boca Juniors", "Selección Argentina", "Fútbol de Primera",
+                                   "Racing Club", "Independiente", "San Lorenzo", "Tenis"]
+            sec_test = st.selectbox("Sección", secciones_conocidas, key="sem_sec")
+        with ct3:
+            pan_test = st.toggle("Tema caliente", key="sem_pan",
+                                 help="¿Está creciendo en el panorama de medios ahora?")
+        if titulo_test.strip():
+            r = predecir_semaforo(st.session_state.semaforo_pack, titulo_test,
+                                  "" if sec_test == "(sin sección)" else sec_test, pan_test)
+            iconos = {"verde": "🟢", "amarillo": "🟡", "rojo": "🔴"}
+            probas_txt = " · ".join(f"{iconos[c]} {p:.0%}" for c, p in r["probas"])
+            st.markdown(f"### {iconos[r['clase']]} {r['clase'].upper()}  ·  {probas_txt}")
+            emp = ", ".join(r["empuja"]) if r["empuja"] else "—"
+            fre = ", ".join(r["frena"]) if r["frena"] else "—"
+            st.caption(f"⬆️ Empuja: {emp}   ·   ⬇️ Frena: {fre}")
+            st.caption("El semáforo informa tu decisión, no la reemplaza — no ve la posición en la home ni contra qué compite.")
