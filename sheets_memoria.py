@@ -39,6 +39,7 @@ ENTHIST_HEADERS = ["Fecha", "Hora", "Entidad", "Menciones"]
 TERMO_HEADERS = ["Entidad", "Tendencia", "HoyProm", "AntesProm", "Variacion", "Actualizado"]
 PARTES_HEADERS = ["Fecha", "Parte", "Enviado"]
 METRICAS_HEADERS = ["Fecha", "Vistas", "Titulo", "Seccion", "Entidades", "EnPanorama", "Lista"]
+EVOL_HEADERS = ["Fecha", "Hora", "NotasDataset", "TestNotas", "Base", "Logistica", "RandomForest", "Ganador", "Mejora"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
     ["umbral_medios", "4", "Mínimo de medios cubriendo un tema sin Olé para alertar"],
@@ -177,6 +178,31 @@ def debe_correr(min_minutos: int = 55) -> bool:
         return transcurrido >= timedelta(minutes=min_minutos)
     except Exception:
         return True
+
+
+def guardar_evolucion(pack: dict, n_dataset: int) -> bool:
+    """Registra los números de cada entrenamiento: la serie histórica del modelo."""
+    try:
+        ws = _ws("Evolución", EVOL_HEADERS)
+        ahora = datetime.now(_TZ_AR)
+        ws.append_row([ahora.strftime("%d/%m/%Y"), ahora.strftime("%H:%M"),
+                       str(n_dataset), str(pack.get("n_test", "")),
+                       f"{pack.get('acc_base', 0):.0%}", f"{pack.get('acc_logit', 0):.0%}",
+                       f"{pack.get('acc_rf', 0):.0%}",
+                       "RandomForest" if pack.get("tipo") == "rf" else "Logística",
+                       f"{(pack.get('acc', 0) - pack.get('acc_base', 0)):+.0%}"],
+                      value_input_option="RAW")
+        return True
+    except Exception:
+        return False
+
+
+def leer_evolucion() -> list:
+    try:
+        ws = _ws("Evolución", EVOL_HEADERS)
+        return [dict(zip(EVOL_HEADERS, f)) for f in ws.get_all_values()[1:]]
+    except Exception:
+        return []
 
 
 def guardar_metricas(fecha: str, filas_cruzadas: list) -> int:

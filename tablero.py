@@ -55,6 +55,7 @@ if st.button("Entrenar / actualizar con los datos de hoy", type="primary"):
             st.warning(pack["error"])
         else:
             st.session_state.pack = pack
+            sheets_memoria.guardar_evolucion(pack, len(metricas))
 
 pack = st.session_state.get("pack")
 if pack:
@@ -70,6 +71,15 @@ if pack:
         st.info("Modo preliminar (menos de 500 notas): orientativo.")
     st.caption("⬆️ Lo que empuja a 🟢: " + " · ".join(n for n, _ in pack["factores_verde"][:7]))
     st.caption("⬇️ Lo que frena: " + " · ".join(n for n, _ in reversed(pack["frena_verde"])))
+    st.caption(f"Competencia interna: logística {pack['acc_logit']:.0%} vs Random Forest {pack['acc_rf']:.0%} — manda el mejor; las razones las explica siempre la logística.")
+
+    evol = sheets_memoria.leer_evolucion()
+    if evol:
+        with st.expander(f"📈 Evolución del modelo ({len(evol)} entrenamientos registrados)"):
+            st.text(f"{'Fecha':<12}{'Notas':>8}{'Base':>7}{'Logít.':>8}{'R.Forest':>10}{'Mejora':>8}  Ganador")
+            for e in evol[-20:]:
+                st.text(f"{e.get('Fecha',''):<12}{e.get('NotasDataset',''):>8}{e.get('Base',''):>7}"
+                        f"{e.get('Logistica',''):>8}{e.get('RandomForest',''):>10}{e.get('Mejora',''):>8}  {e.get('Ganador','')}")
 else:
     st.info("Entrená el modelo para habilitar el semáforo de abajo.")
 

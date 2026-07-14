@@ -2052,6 +2052,45 @@ with tab_result:
         except Exception as e:
             st.error(f"No pude leer el PDF: {e}")
 
+    # ── Carga de histórico desde Excel (una vez) ──
+    with st.expander("📚 Cargar histórico desde Excel (títulos + vistas)"):
+        st.caption("Para archivos tipo 'Notas por rango de PVs': columnas Nota / PVs (Autor opcional). Multiplica el dataset del semáforo de una. Re-subirlo reemplaza la carga anterior, no duplica.")
+        xls_subido = st.file_uploader("Excel histórico (.xlsx)", type=["xlsx"], key="uploader_hist")
+        if xls_subido is not None:
+            try:
+                import pandas as pd
+                dfh = pd.read_excel(xls_subido)
+                dfh.columns = [str(c).strip() for c in dfh.columns]
+                col_t = next((c for c in dfh.columns if c.lower() in ("nota", "titulo", "título", "title")), None)
+                col_v = next((c for c in dfh.columns if c.lower() in ("pvs", "vistas", "paginas vistas", "páginas vistas")), None)
+                if not col_t or not col_v:
+                    st.error(f"No encuentro las columnas de título y vistas. Columnas del archivo: {list(dfh.columns)}")
+                else:
+                    dfh = dfh.dropna(subset=[col_t, col_v])
+                    st.success(f"Leídas {len(dfh):,} notas · vistas de {int(dfh[col_v].min())} a {int(dfh[col_v].max()):,}")
+                    if st.button(f"💾 Guardar {len(dfh):,} notas históricas en la planilla", key="btn_hist"):
+                        if not sheets_memoria.disponible():
+                            st.error("Sin conexión con la planilla")
+                        else:
+                            with st.spinner("Detectando entidades y guardando (puede tardar un minuto)..."):
+                                filas_h = []
+                                for _, r in dfh.iterrows():
+                                    t = str(r[col_t])[:200]
+                                    try:
+                                        v = int(float(r[col_v]))
+                                    except Exception:
+                                        continue
+                                    filas_h.append({"titulo": t, "vistas": v, "seccion": "",
+                                                    "entidades": detectar_entidades(t),
+                                                    "en_panorama": False, "lista": "hist"})
+                                n_ok = sheets_memoria.guardar_metricas("hist90", filas_h)
+                                if n_ok:
+                                    st.success(f"✔ {n_ok:,} notas históricas guardadas (fecha 'hist90'). El semáforo ya puede entrenar en serio: probalo en el tablero.")
+                                else:
+                                    st.error("No se pudo guardar — probá de nuevo (archivo grande, a veces la planilla tarda).")
+            except Exception as e:
+                st.error(f"No pude leer el Excel: {e}")
+
     # ── Informe de patrones sobre las métricas acumuladas ──
     st.markdown("---")
     st.markdown("#### 🧠 Informe de patrones")
@@ -2151,6 +2190,7 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
                         st.warning(pack["error"])
                     else:
                         st.session_state.semaforo_pack = pack
+                        sheets_memoria.guardar_evolucion(pack, len(sheets_memoria.leer_metricas()))
                         mejora = pack["acc"] - pack["acc_base"]
                         st.success(f"✔ Entrenado con {pack['n_train']} notas · testeado en {pack['n_test']} posteriores")
                         c1, c2, c3 = st.columns(3)
