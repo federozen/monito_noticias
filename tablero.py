@@ -124,9 +124,11 @@ st.header("🧪 Probar un tema")
 if not pack:
     st.info("Primero entrená el modelo.")
 else:
-    ct1, ct2, ct3 = st.columns([3, 1.4, 1])
+    ct1, ct2, ct3, ct4 = st.columns([3, 1.3, 1.1, 0.9])
     with ct1:
         titulo_test = st.text_input("Título o tema", placeholder="ej: Mastantuono se lesiona en la práctica de River")
+    with ct4:
+        franja = st.selectbox("Horario", ["(s/d)", "mañana", "mediodía", "tarde", "noche"])
     with ct2:
         sec = st.selectbox("Sección", ["(sin sección)", "Mundial | Mundial 2026", "River Plate",
                                        "Boca Juniors", "Selección Argentina", "Fútbol de Primera",
@@ -134,7 +136,9 @@ else:
     with ct3:
         caliente = st.toggle("Tema caliente", help="¿Está creciendo en el panorama ahora?")
     if titulo_test.strip():
-        r = predecir_semaforo(pack, titulo_test, "" if sec == "(sin sección)" else sec, caliente)
+        _hmap = {"mañana": "09:00", "mediodía": "12:00", "tarde": "17:00", "noche": "21:00"}
+        r = predecir_semaforo(pack, titulo_test, "" if sec == "(sin sección)" else sec, caliente,
+                              _hmap.get(franja, ""))
         iconos = {"verde": "🟢", "amarillo": "🟡", "rojo": "🔴"}
         probas_txt = " · ".join(f"{iconos[c]} {p:.0%}" for c, p in r["probas"])
         st.markdown(f"## {iconos[r['clase']]} {r['clase'].upper()}  ·  {probas_txt}")

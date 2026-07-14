@@ -38,7 +38,7 @@ ENTIDADES_HEADERS = ["Ranking", "Entidad", "Menciones", "Medios", "Olé", "Actua
 ENTHIST_HEADERS = ["Fecha", "Hora", "Entidad", "Menciones"]
 TERMO_HEADERS = ["Entidad", "Tendencia", "HoyProm", "AntesProm", "Variacion", "Actualizado"]
 PARTES_HEADERS = ["Fecha", "Parte", "Enviado"]
-METRICAS_HEADERS = ["Fecha", "Vistas", "Titulo", "Seccion", "Entidades", "EnPanorama", "Lista"]
+METRICAS_HEADERS = ["Fecha", "Vistas", "Titulo", "Seccion", "Entidades", "EnPanorama", "Lista", "Hora"]
 EVOL_HEADERS = ["Fecha", "Hora", "NotasDataset", "TestNotas", "Base", "Logistica", "RandomForest", "Ganador", "Mejora"]
 CONFIG_DEFAULTS = [
     ["parametro", "valor", "descripcion"],
@@ -216,7 +216,7 @@ def guardar_metricas(fecha: str, filas_cruzadas: list) -> int:
                    n.get("seccion", "")[:40],
                    " · ".join(n.get("entidades", [])[:4]),
                    "sí" if n.get("en_panorama") else "no",
-                   n.get("lista", "")] for n in filas_cruzadas]
+                   n.get("lista", ""), n.get("hora", "")] for n in filas_cruzadas]
         ws.clear()
         ws.update(range_name="A1", values=[METRICAS_HEADERS] + nuevas + conservar,
                   value_input_option="RAW")

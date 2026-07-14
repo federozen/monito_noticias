@@ -89,7 +89,7 @@ from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
 from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
-from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional  # noqa: F401
+from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional, exportar_panorama_total  # noqa: F401
 from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: F401
 import sheets_memoria
 
@@ -734,7 +734,14 @@ with tab_arg_ext:
             panorama_txt = exportar_panorama_internacional(st.session_state.resultados)
             n_recorte = recorte_txt.count("[")
             n_pan = panorama_txt.count("\n") - 4
-            cdesc, cpan, cprompt = st.columns([1, 1, 1])
+            total_txt = exportar_panorama_total(st.session_state.resultados)
+            n_total = total_txt.count("\n") - 8
+            cdesc, cpan, ctot, cprompt = st.columns([1, 1, 1, 1])
+            with ctot:
+                st.download_button(
+                    f"⬇️ TODO: nac + int (~{max(n_total,0)})",
+                    total_txt, file_name="panorama_total.txt",
+                    mime="text/plain", use_container_width=True, key="dl_panorama_total")
             with cdesc:
                 st.download_button(
                     f"⬇️ Recorte Argentina ({n_recorte})",
@@ -2010,8 +2017,12 @@ with tab_result:
                 pass
             top = cruzar_metricas(rep["mas_vistas"], historial, cfg_ent)
             flojas = cruzar_metricas(rep["menos_vistas"], historial, cfg_ent)
-            for n in top: n["lista"] = "top"
-            for n in flojas: n["lista"] = "floja"
+            import re as _re
+            def _hora_de(n):
+                m = _re.match(r"\d{1,2}:\d{2}$", (n.get("publicacion") or "").strip())
+                return m.group(0) if m else ""
+            for n in top: n["lista"] = "top"; n["hora"] = _hora_de(n)
+            for n in flojas: n["lista"] = "floja"; n["hora"] = _hora_de(n)
 
             en_pan = sum(1 for n in top if n["en_panorama"])
             c1, c2, c3 = st.columns(3)
@@ -2207,10 +2218,12 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
 
     if st.session_state.get("semaforo_pack"):
         st.markdown("**Probar un tema:**")
-        ct1, ct2, ct3 = st.columns([3, 1.4, 1])
+        ct1, ct2, ct3, ct4 = st.columns([3, 1.3, 1.1, 0.9])
         with ct1:
             titulo_test = st.text_input("Título o tema", key="sem_titulo",
                                         placeholder="ej: Mastantuono se lesiona en la práctica de River")
+        with ct4:
+            franja_test = st.selectbox("Horario", ["(s/d)", "mañana", "mediodía", "tarde", "noche"], key="sem_franja")
         with ct2:
             secciones_conocidas = ["(sin sección)", "Mundial | Mundial 2026", "River Plate",
                                    "Boca Juniors", "Selección Argentina", "Fútbol de Primera",
@@ -2220,8 +2233,10 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
             pan_test = st.toggle("Tema caliente", key="sem_pan",
                                  help="¿Está creciendo en el panorama de medios ahora?")
         if titulo_test.strip():
+            _hmap = {"mañana": "09:00", "mediodía": "12:00", "tarde": "17:00", "noche": "21:00"}
             r = predecir_semaforo(st.session_state.semaforo_pack, titulo_test,
-                                  "" if sec_test == "(sin sección)" else sec_test, pan_test)
+                                  "" if sec_test == "(sin sección)" else sec_test, pan_test,
+                                  _hmap.get(franja_test, ""))
             iconos = {"verde": "🟢", "amarillo": "🟡", "rojo": "🔴"}
             probas_txt = " · ".join(f"{iconos[c]} {p:.0%}" for c, p in r["probas"])
             st.markdown(f"### {iconos[r['clase']]} {r['clase'].upper()}  ·  {probas_txt}")

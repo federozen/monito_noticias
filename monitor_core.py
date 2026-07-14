@@ -824,8 +824,20 @@ def cruzar_metricas(notas: list, historial: list = None,
 
 
 # ─── SEMÁFORO PREDICTIVO (se entrena con la pestaña Métricas) ────────────────
+def _franja_horaria(hora: str) -> str:
+    """'15:50' → 'tarde'. Devuelve '' si no hay hora parseable."""
+    m = re.match(r"(\d{1,2}):\d{2}", (hora or "").strip())
+    if not m:
+        return ""
+    h = int(m.group(1))
+    if 5 <= h < 11: return "manana"
+    if 11 <= h < 15: return "mediodia"
+    if 15 <= h < 20: return "tarde"
+    return "noche"
+
+
 def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
-                   en_panorama: bool = False) -> dict:
+                   en_panorama: bool = False, hora: str = "") -> dict:
     """Convierte una nota en el vector de características del modelo.
     Mismo constructor para entrenar y para predecir (clave de consistencia)."""
     t = titulo or ""
@@ -847,6 +859,9 @@ def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
     for fid, conf in FILTROS_TEMATICOS.items():
         if any(k in tn for k in conf["keywords"]):
             f[f"tipo_{fid}"] = 1
+    fr = _franja_horaria(hora)
+    if fr:
+        f[f"franja_{fr}"] = 1
     return f
 
 
@@ -872,18 +887,25 @@ def entrenar_semaforo(metricas: list) -> dict:
         lv = math.log10(int(v) + 1)
         return "verde" if lv >= c2 else ("amarillo" if lv >= c1 else "rojo")
 
-    # orden temporal para el split honesto (entrenar pasado, testear futuro)
+    # orden temporal para el split honesto (entrenar pasado, testear futuro).
+    # Las filas sin fecha real (histórico "hist90") se MEZCLAN entre sí antes:
+    # suelen venir ordenadas por vistas, y ese orden rompería la evaluación.
+    import random as _rnd
     def clave_fecha(m):
-        p = (m.get("Fecha") or "0/0").split("/")
-        return (int(p[1]) if len(p) > 1 and p[1].isdigit() else 0,
-                int(p[0]) if p[0].isdigit() else 0)
-    filas.sort(key=clave_fecha)
+        p = (m.get("Fecha") or "").split("/")
+        if len(p) == 2 and p[0].isdigit() and p[1].isdigit():
+            return (int(p[1]), int(p[0]))
+        return None
+    sin_fecha = [m for m in filas if clave_fecha(m) is None]
+    con_fecha = sorted((m for m in filas if clave_fecha(m) is not None), key=clave_fecha)
+    _rnd.Random(7).shuffle(sin_fecha)
+    filas = sin_fecha + con_fecha
 
     X_raw, y = [], []
     for m in filas:
         ents = [e.strip() for e in (m.get("Entidades") or "").split("·") if e.strip()]
         X_raw.append(_features_nota(m["Titulo"], m.get("Seccion", ""), ents,
-                                    m.get("EnPanorama") == "sí"))
+                                    m.get("EnPanorama") == "sí", m.get("Hora", "")))
         y.append(etiqueta(m["Vistas"]))
 
     corte = max(int(len(X_raw) * 0.8), len(X_raw) - 400)
@@ -892,7 +914,10 @@ def entrenar_semaforo(metricas: list) -> dict:
     Xte = vec.transform(X_raw[corte:]);     yte = y[corte:]
 
     base = max(set(ytr), key=ytr.count)
-    acc_base = sum(1 for v in yte if v == base) / max(len(yte), 1)
+    acc_mayoritaria = sum(1 for v in yte if v == base) / max(len(yte), 1)
+    # base honesta: la mejor apuesta ciega nunca rinde menos que el azar (1/3);
+    # sin este piso, un test sin la clase mayoritaria muestra "0%" engañoso
+    acc_base = max(acc_mayoritaria, 1.0 / 3.0)
 
     logit = LogisticRegression(max_iter=1000)
     logit.fit(Xtr, ytr)
@@ -916,9 +941,9 @@ def entrenar_semaforo(metricas: list) -> dict:
 
 
 def predecir_semaforo(pack: dict, titulo: str, seccion: str = "",
-                      en_panorama: bool = False) -> dict:
+                      en_panorama: bool = False, hora: str = "") -> dict:
     """Devuelve clase, probabilidades y razones para un título nuevo."""
-    f = _features_nota(titulo, seccion, None, en_panorama)
+    f = _features_nota(titulo, seccion, None, en_panorama, hora)
     X = pack["vec"].transform([f])
     probas = pack["modelo"].predict_proba(X)[0]
     clases = list(pack["modelo"].classes_)
@@ -2141,6 +2166,47 @@ def exportar_panorama_internacional(resultados: dict) -> str:
     encabezado = ["PANORAMA INTERNACIONAL COMPLETO — TODOS LOS TITULARES",
                   f"~últimas 24-48h · {hoy} · {total} titulares de "
                   f"{len([f for f in _fuentes_int_reales() if resultados.get(f['id'])])} medios", ""]
+    return "\n".join(encabezado + partes)
+
+
+def exportar_panorama_total(resultados: dict) -> str:
+    """TODOS los titulares scrapeados (nacionales + primicias + internacionales),
+    con Olé primero, agrupados por medio, sin tope. Para adjuntar a cualquier IA
+    y consultar sobre el panorama completo del día."""
+    from datetime import datetime
+    ole = [f for f in FUENTES_NAC if f["id"] == "ole"]
+    resto_nac = [f for f in FUENTES_NAC if f["id"] != "ole"]
+    orden = ole + resto_nac + FUENTES_ESP + _fuentes_int_reales()
+    partes, total, n_medios = [], 0, 0
+    seccion_actual = None
+    secciones = {id(ole[0]) if ole else None: None}
+    def _grupo(f):
+        if f["id"] == "ole": return "═══ OLÉ ═══"
+        if f["id"] in FUENTES_NAC_IDS: return "═══ MEDIOS NACIONALES ═══"
+        if f["id"] in FUENTES_ESP_IDS: return "═══ PRIMICIAS E INSTITUCIONES ═══"
+        return "═══ MEDIOS INTERNACIONALES ═══"
+    for f in orden:
+        notas = resultados.get(f["id"], [])
+        if not notas:
+            continue
+        g = _grupo(f)
+        if g != seccion_actual:
+            partes.append(f"\n\n{g}")
+            seccion_actual = g
+        partes.append(f"\n=== {f['nombre']} ({len(notas)} titulares) ===")
+        n_medios += 1
+        vistos = set()
+        for n in notas:
+            t = n.get("titulo", "")
+            k = frozenset(normalizar_titulo(t))
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            partes.append(t)
+            total += 1
+    hoy = datetime.now().strftime("%d/%m/%Y")
+    encabezado = ["PANORAMA TOTAL — TODOS LOS TITULARES SCRAPEADOS (NACIONALES + INTERNACIONALES)",
+                  f"~últimas 24-48h · {hoy} · {total} titulares de {n_medios} medios · Olé primero", ""]
     return "\n".join(encabezado + partes)
 
 
