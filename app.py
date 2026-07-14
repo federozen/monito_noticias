@@ -91,6 +91,7 @@ from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODE
 from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
 from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional, exportar_panorama_total  # noqa: F401
 from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: F401
+from monitor_core import fetch_trends_ar  # noqa: F401
 import sheets_memoria
 
 if "resultados" not in st.session_state:
@@ -900,6 +901,19 @@ with tab_ole:
 
 # ─── TAB TENDENCIAS ──────────────────────────────────────────────────────────
 with tab_tend:
+    with st.expander("🔥 Qué busca la gente ahora (Google Trends Argentina)"):
+        st.caption("Tendencias de búsqueda en Google AR — la demanda del público en tiempo casi real. Las deportivas van primero.")
+        if st.button("Traer tendencias de búsqueda", key="btn_trends"):
+            with st.spinner("Consultando Google Trends..."):
+                st.session_state.trends_ar = fetch_trends_ar()
+        for t in st.session_state.get("trends_ar", []):
+            icono = "⚽" if t["deportivo"] else "▫️"
+            traf = f' · <span style="color:#dc2626;font-weight:700">{t["trafico"]}</span>' if t["trafico"] else ""
+            nota = f'<br><span style="color:#888;font-size:12px">{t["nota"][:110]}</span>' if t["nota"] else ""
+            st.markdown(f'{icono} <b>{t["busqueda"]}</b>{traf}{nota}', unsafe_allow_html=True)
+        if st.session_state.get("trends_ar") == []:
+            st.info("Google Trends no respondió — probá de nuevo en un rato.")
+
     if not tendencias:
         st.info("Actualizá las fuentes para ver las tendencias.")
     else:

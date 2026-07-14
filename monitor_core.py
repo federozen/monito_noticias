@@ -82,6 +82,10 @@ FUENTES_INT = [
     {"id": "abola",     "nombre": "A Bola (PT)",     "url": "https://news.google.com/rss/search?q=site:abola.pt&hl=pt-PT&gl=PT&ceid=PT:pt-150",             "color": "#e30613", "es_rss": True},
     {"id": "bild",      "nombre": "Bild Sport (DE)", "url": "https://news.google.com/rss/search?q=site:bild.de%20fussball&hl=de&gl=DE&ceid=DE:de",           "color": "#d00000", "es_rss": True},
     {"id": "skyit",     "nombre": "Sky Sport (IT)",  "url": "https://news.google.com/rss/search?q=site:sport.sky.it&hl=it&gl=IT&ceid=IT:it",                "color": "#0a1a3f", "es_rss": True},
+    # Agencias de noticias (material curado y verificado, vía web abierta)
+    {"id": "efe",       "nombre": "EFE (agencia)",   "url": "https://news.google.com/rss/search?q=site:efe.com%20(futbol%20OR%20deportes)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#0055a5", "es_rss": True},
+    {"id": "ap_es",     "nombre": "AP Español",      "url": "https://news.google.com/rss/search?q=site:apnews.com%20(futbol%20OR%20Argentina%20deportes)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#d1112b", "es_rss": True},
+    {"id": "reuters_dep","nombre": "Reuters Sports", "url": "https://news.google.com/rss/search?q=site:reuters.com%20(soccer%20OR%20football%20OR%20Argentina)&hl=en-US&gl=US&ceid=US:en", "color": "#ff8000", "es_rss": True},
 ]
 
 # ─── GRUPO 3: PRIMICIAS E INSTITUCIONES ──────────────────────────────────────
@@ -1153,7 +1157,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v21 · métricas"
+CORE_VERSION = "núcleo v22 · agencias+trends"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
@@ -2167,6 +2171,58 @@ def exportar_panorama_internacional(resultados: dict) -> str:
                   f"~últimas 24-48h · {hoy} · {total} titulares de "
                   f"{len([f for f in _fuentes_int_reales() if resultados.get(f['id'])])} medios", ""]
     return "\n".join(encabezado + partes)
+
+
+TRENDS_DEPORTE_KW = [
+    "futbol", "river", "boca", "racing", "independiente", "san lorenzo",
+    "seleccion", "mundial", "gol", "copa", "liga", "partido", "dt", "tecnico",
+    "messi", "scaloni", "afa", "libertadores", "champions", "penal", "vs",
+    "colapinto", "f1", "formula", "tenis", "basquet", "nba", "rugby", "pumas",
+    "boxeo", "ufc", "hincha", "estadio", "arquero", "delantero", "refuerzo",
+]
+
+
+def fetch_trends_ar(max_items: int = 20) -> list:
+    """Tendencias de búsqueda de Google en Argentina (RSS oficial de Trends).
+    Marca cuáles parecen deportivas. Devuelve [{busqueda, trafico, nota, url,
+    deportivo}] o lista vacía si Google no responde."""
+    urls = [
+        "https://trends.google.com/trending/rss?geo=AR",
+        "https://trends.google.com/trends/trendingsearches/daily/rss?geo=AR",
+    ]
+    xml = ""
+    for u in urls:
+        try:
+            r = requests.get(u, headers=HEADERS, timeout=12)
+            if r.status_code == 200 and "<item>" in r.text:
+                xml = r.text
+                break
+        except Exception:
+            continue
+    if not xml:
+        return []
+    out = []
+    for m in re.finditer(r"<item>([\s\S]*?)</item>", xml):
+        blk = m.group(1)
+        tm = re.search(r"<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</title>", blk)
+        if not tm:
+            continue
+        busqueda = tm.group(1).strip()
+        tr = re.search(r"<ht:approx_traffic>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</ht:approx_traffic>", blk)
+        nt = re.search(r"<ht:news_item_title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</ht:news_item_title>", blk)
+        nu = re.search(r"<ht:news_item_url>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</ht:news_item_url>", blk)
+        nota = re.sub(r"<[^>]+>", "", nt.group(1)).strip() if nt else ""
+        texto = _norm_texto(f"{busqueda} {nota}")
+        deportivo = bool(detectar_entidades(f"{busqueda} {nota}")) or \
+                    any(k in texto for k in TRENDS_DEPORTE_KW)
+        out.append({"busqueda": busqueda,
+                    "trafico": tr.group(1).strip() if tr else "",
+                    "nota": nota, "url": nu.group(1).strip() if nu else "",
+                    "deportivo": deportivo})
+        if len(out) >= max_items:
+            break
+    out.sort(key=lambda x: not x["deportivo"])  # deportivas primero
+    return out
 
 
 def exportar_panorama_total(resultados: dict) -> str:
