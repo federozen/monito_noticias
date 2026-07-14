@@ -83,8 +83,8 @@ FUENTES_INT = [
     {"id": "bild",      "nombre": "Bild Sport (DE)", "url": "https://news.google.com/rss/search?q=site:bild.de%20fussball&hl=de&gl=DE&ceid=DE:de",           "color": "#d00000", "es_rss": True},
     {"id": "skyit",     "nombre": "Sky Sport (IT)",  "url": "https://news.google.com/rss/search?q=site:sport.sky.it&hl=it&gl=IT&ceid=IT:it",                "color": "#0a1a3f", "es_rss": True},
     # Agencias de noticias (material curado y verificado, vía web abierta)
-    {"id": "efe",       "nombre": "EFE (agencia)",   "url": "https://news.google.com/rss/search?q=site:efe.com%20(futbol%20OR%20deportes)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#0055a5", "es_rss": True},
-    {"id": "ap_es",     "nombre": "AP Español",      "url": "https://news.google.com/rss/search?q=site:apnews.com%20(futbol%20OR%20Argentina%20deportes)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#d1112b", "es_rss": True},
+    {"id": "efe",       "nombre": "EFE (agencia)",   "url": "https://news.google.com/rss/search?q=site:efe.com/deportes&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#0055a5", "es_rss": True},
+    {"id": "afp_f24",   "nombre": "AFP (France 24)", "url": "https://news.google.com/rss/search?q=site:france24.com/es%20(futbol%20OR%20deportes%20OR%20Argentina)&hl=es-419&gl=AR&ceid=AR:es-419", "color": "#0f3b8c", "es_rss": True},
     {"id": "reuters_dep","nombre": "Reuters Sports", "url": "https://news.google.com/rss/search?q=site:reuters.com%20(soccer%20OR%20football%20OR%20Argentina)&hl=en-US&gl=US&ceid=US:en", "color": "#ff8000", "es_rss": True},
 ]
 
