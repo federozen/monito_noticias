@@ -10,7 +10,7 @@ from collections import Counter
 
 st.set_page_config(page_title="Tablero Predictivo", page_icon="🚦", layout="wide")
 
-from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: E402
+from monitor_core import entrenar_semaforo, predecir_semaforo, entrenar_detector, predecir_incendio  # noqa: E402
 import sheets_memoria  # noqa: E402
 
 st.title("🚦 Tablero Predictivo")
@@ -116,6 +116,60 @@ else:
             extra = f" · {medios} medios" if medios else ""
             razones = f"  _({', '.join(empuja)})_" if clase == "verde" and empuja else ""
             st.markdown(f"{iconos[clase]} **{pv:.0%}** · {titulo[:120]}{extra}{razones}")
+
+st.markdown("---")
+
+# ─── 3b) DETECTOR DE INCENDIOS ───────────────────────────────────────────────
+st.header("🔥 Detector de incendios")
+st.caption("¿Qué tema chico va a explotar? Aprende del Historial: temas que nacieron con 2-5 medios y llegaron (o no) a 8+ en las siguientes 12 horas.")
+if st.button("Entrenar detector con el Historial"):
+    with st.spinner("Rastreando nacimientos y explosiones en el Historial..."):
+        try:
+            hist = sheets_memoria.leer_historial(45)
+            dpack = entrenar_detector(hist)
+            if "error" in dpack:
+                st.warning(dpack["error"])
+            else:
+                st.session_state.dpack = dpack
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+dpack = st.session_state.get("dpack")
+if dpack:
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Temas chicos rastreados", dpack["n_train"] + dpack["n_test"])
+    d2.metric("🔥 Aciertos al marcar fuego", f"{dpack['precision_fuego']:.0%}",
+              help="De los temas que el detector marcó como 'va a explotar', cuántos explotaron de verdad")
+    d3.metric("Incendios detectados", f"{dpack['cobertura_fuego']:.0%}",
+              help="De todas las explosiones reales, cuántas el detector vio venir")
+    st.caption("⬆️ Empuja al fuego: " + " · ".join(n for n, _ in dpack["factores_fuego"][:6]))
+
+    # aplicar al panorama actual: los temas chicos de hoy, ordenados por riesgo de explosión
+    try:
+        temas_hoy = sheets_memoria.leer_snapshot_anterior()
+    except Exception:
+        temas_hoy = []
+    chicos = []
+    from datetime import datetime as _dt
+    hora_ahora = _dt.now().strftime("%H:%M")
+    for t in temas_hoy:
+        titulo = t.get("titulo", "") if isinstance(t, dict) else str(t)
+        try:
+            medios = int(t.get("cant_medios", 0)) if isinstance(t, dict) else 0
+        except Exception:
+            medios = 0
+        if titulo and 2 <= medios <= 5:
+            r = predecir_incendio(dpack, titulo, medios, hora_ahora)
+            chicos.append((r["prob"], titulo, medios, r["empuja"][:3]))
+    if chicos:
+        chicos.sort(reverse=True)
+        st.markdown("**Los temas chicos de AHORA, por riesgo de explosión:**")
+        for prob, titulo, medios, empuja in chicos[:15]:
+            icono = "🔥" if prob >= 0.6 else ("🟠" if prob >= 0.35 else "▫️")
+            razones = f"  _({', '.join(empuja)})_" if prob >= 0.6 and empuja else ""
+            st.markdown(f"{icono} **{prob:.0%}** · {titulo[:110]} · {medios} medios{razones}")
+    else:
+        st.info("No hay temas chicos (2-5 medios) en el Snapshot actual — esperá la próxima corrida del vigía.")
 
 st.markdown("---")
 

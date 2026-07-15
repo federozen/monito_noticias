@@ -964,6 +964,121 @@ def predecir_semaforo(pack: dict, titulo: str, seccion: str = "",
             "frena": [n for n, c in activos if c < 0][:3]}
 
 
+
+# ─── DETECTOR DE INCENDIOS (¿este tema chico va a explotar?) ─────────────────
+def _dataset_incendios(historial: list, umbral_explota: int = 8,
+                       ventana_horas: int = 12) -> tuple:
+    """Construye ejemplos desde el Historial: cada tema visto CHICO (2-5 medios)
+    por primera vez en el día, etiquetado según si llegó a umbral_explota medios
+    dentro de la ventana. Devuelve (X_raw, y, timestamps)."""
+    from datetime import datetime, timedelta
+    filas = []
+    for h in historial:
+        try:
+            ts = datetime.strptime(f"{h.get('Fecha','')} {h.get('Hora','')}", "%Y-%m-%d %H:%M")
+        except Exception:
+            continue
+        try:
+            medios = int(h.get("CantMedios", "0") or 0)
+        except Exception:
+            continue
+        titulo = h.get("Titulo", "")
+        if not titulo:
+            continue
+        filas.append({"ts": ts, "titulo": titulo, "medios": medios,
+                      "keys": normalizar_titulo(titulo),
+                      "ole": h.get("TieneOle") == "1"})
+    filas.sort(key=lambda f: f["ts"])
+
+    X_raw, y, tss = [], [], []
+    vistos_dia = set()  # (fecha, frozenset_keys) para tomar solo el primer avistaje
+    for i, f in enumerate(filas):
+        if not (2 <= f["medios"] <= 5) or not f["keys"]:
+            continue
+        marca = (f["ts"].date(), frozenset(f["keys"]))
+        if marca in vistos_dia:
+            continue
+        vistos_dia.add(marca)
+        limite = f["ts"] + timedelta(hours=ventana_horas)
+        max_futuro = f["medios"]
+        for g in filas[i+1:]:
+            if g["ts"] > limite:
+                break
+            if solapamiento(f["keys"], g["keys"]) >= 0.4:
+                max_futuro = max(max_futuro, g["medios"])
+        feats = _features_nota(f["titulo"], "", None, False,
+                               f["ts"].strftime("%H:%M"))
+        feats["medios_ahora"] = f["medios"] / 10.0
+        feats["ya_en_ole"] = 1 if f["ole"] else 0
+        X_raw.append(feats)
+        y.append("explota" if max_futuro >= umbral_explota else "no")
+        tss.append(f["ts"])
+    return X_raw, y, tss
+
+
+def entrenar_detector(historial: list) -> dict:
+    """Entrena el detector de incendios con el Historial. Devuelve pack con
+    métricas honestas (incluye precisión y cobertura de la clase 'explota')."""
+    from sklearn.feature_extraction import DictVectorizer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.ensemble import RandomForestClassifier
+
+    X_raw, y, tss = _dataset_incendios(historial)
+    n_exp = y.count("explota")
+    if len(y) < 120 or n_exp < 15:
+        return {"error": f"Datos insuficientes: {len(y)} temas chicos rastreados, "
+                         f"{n_exp} explosiones. El Historial necesita más días acumulados."}
+    corte = int(len(y) * 0.8)
+    vec = DictVectorizer(sparse=False)
+    Xtr = vec.fit_transform(X_raw[:corte]); ytr = y[:corte]
+    Xte = vec.transform(X_raw[corte:]);     yte = y[corte:]
+
+    base = max(set(ytr), key=ytr.count)
+    acc_base = max(sum(1 for v in yte if v == base) / max(len(yte), 1), 0.5)
+
+    logit = LogisticRegression(max_iter=1000, class_weight="balanced")
+    logit.fit(Xtr, ytr)
+    rf = RandomForestClassifier(n_estimators=200, min_samples_leaf=3,
+                                class_weight="balanced", random_state=7)
+    rf.fit(Xtr, ytr)
+    acc_l, acc_r = logit.score(Xte, yte), rf.score(Xte, yte)
+    tipo, modelo, acc = ("rf", rf, acc_r) if acc_r >= acc_l else ("logit", logit, acc_l)
+
+    # métricas de la clase que importa: 🔥 explota
+    pred = modelo.predict(Xte)
+    tp = sum(1 for p, v in zip(pred, yte) if p == "explota" and v == "explota")
+    fp = sum(1 for p, v in zip(pred, yte) if p == "explota" and v == "no")
+    fn = sum(1 for p, v in zip(pred, yte) if p == "no" and v == "explota")
+    precision_fuego = tp / max(tp + fp, 1)
+    cobertura_fuego = tp / max(tp + fn, 1)
+
+    nombres = vec.get_feature_names_out()
+    idx = list(logit.classes_).index("explota")
+    pesos = sorted(zip(nombres, logit.coef_[idx]), key=lambda x: -x[1])
+    return {"vec": vec, "modelo": modelo, "logit": logit, "tipo": tipo,
+            "acc": acc, "acc_base": acc_base, "n_train": len(ytr),
+            "n_test": len(yte), "n_explosiones": n_exp,
+            "precision_fuego": precision_fuego, "cobertura_fuego": cobertura_fuego,
+            "factores_fuego": pesos[:8]}
+
+
+def predecir_incendio(pack: dict, titulo: str, medios_ahora: int,
+                      hora: str = "") -> dict:
+    """Probabilidad de que un tema chico explote en las próximas horas."""
+    f = _features_nota(titulo, "", None, False, hora)
+    f["medios_ahora"] = medios_ahora / 10.0
+    X = pack["vec"].transform([f])
+    probas = dict(zip(pack["modelo"].classes_, pack["modelo"].predict_proba(X)[0]))
+    p = probas.get("explota", 0.0)
+    nombres = list(pack["vec"].get_feature_names_out())
+    idx = list(pack["logit"].classes_).index("explota")
+    coefs = pack["logit"].coef_[idx]
+    activos = sorted(((n, coefs[i]) for i, n in enumerate(nombres) if X[0][i] != 0),
+                     key=lambda x: -abs(x[1]))
+    return {"prob": p, "empuja": [n for n, c in activos if c > 0][:4],
+            "frena": [n for n, c in activos if c < 0][:3]}
+
+
 # ─── AGENDA ACCIONABLE + MOMENTUM ─────────────────────────────────────────────
 def calcular_momentum(tendencias: list, prev_tendencias: list) -> dict:
     """Compara cada cluster actual con el más parecido del snapshot anterior.
