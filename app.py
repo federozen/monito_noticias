@@ -2240,6 +2240,8 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
         else:
             with st.spinner("Entrenando con tus métricas..."):
                 try:
+                    import monitor_core as _mc
+                    _mc._HIST_PARA_MOMENTUM = sheets_memoria.leer_historial(60) if sheets_memoria.disponible() else []
                     pack = entrenar_semaforo(sheets_memoria.leer_metricas())
                     if "error" in pack:
                         st.warning(pack["error"])

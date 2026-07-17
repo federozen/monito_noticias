@@ -50,6 +50,8 @@ st.markdown("---")
 st.header("🧠 El modelo")
 if st.button("Entrenar / actualizar con los datos de hoy", type="primary"):
     with st.spinner("Entrenando..."):
+        import monitor_core as _mc
+        _mc._HIST_PARA_MOMENTUM = sheets_memoria.leer_historial(60)
         pack = entrenar_semaforo(metricas)
         if "error" in pack:
             st.warning(pack["error"])

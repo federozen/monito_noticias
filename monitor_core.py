@@ -840,8 +840,23 @@ def _franja_horaria(hora: str) -> str:
     return "noche"
 
 
+def _dia_semana(fecha: str) -> str:
+    """'2026-07-17' o '17/07' → 'vie'. '' si no parsea."""
+    from datetime import datetime
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m"):
+        try:
+            d = datetime.strptime(fecha.strip(), fmt)
+            if fmt == "%d/%m":
+                d = d.replace(year=datetime.now().year)
+            return ["lun","mar","mie","jue","vie","sab","dom"][d.weekday()]
+        except Exception:
+            continue
+    return ""
+
+
 def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
-                   en_panorama: bool = False, hora: str = "") -> dict:
+                   en_panorama: bool = False, hora: str = "",
+                   momentum: str = "", nov_entidad: str = "", fecha: str = "") -> dict:
     """Convierte una nota en el vector de características del modelo.
     Mismo constructor para entrenar y para predecir (clave de consistencia)."""
     t = titulo or ""
@@ -871,7 +886,61 @@ def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
     for e in cl["estructuras"]:
         f[f"estruct_{e}"] = 1
     f["calidad_titulo"] = cl["calidad"] / 10.0
+    if momentum:
+        f[f"mom_{momentum}"] = 1        # subiendo / bajando / estable
+    if nov_entidad:
+        f[f"nov_{nov_entidad}"] = 1     # emergente / habitual
+    ds = _dia_semana(fecha)
+    if ds:
+        f[f"dow_{ds}"] = 1
     return f
+
+
+_HIST_PARA_MOMENTUM = []  # lo setea la app antes de entrenar (opcional)
+
+
+def _indice_momentum(historial: list) -> dict:
+    """Precalcula, por tema del historial, su trayectoria de medios: devuelve
+    dict {(fecha, frozenset_keys): 'subiendo'|'bajando'|'estable'} comparando
+    la primera vs la última aparición del tema ese día."""
+    from collections import defaultdict
+    series = defaultdict(list)
+    for h in historial:
+        titulo = h.get("Titulo", "")
+        if not titulo:
+            continue
+        try:
+            medios = int(h.get("CantMedios", "0") or 0)
+        except Exception:
+            continue
+        keys = frozenset(normalizar_titulo(titulo))
+        if keys:
+            series[(h.get("Fecha", ""), keys)].append((h.get("Hora", ""), medios))
+    out = {}
+    for clave, obs in series.items():
+        obs.sort()
+        if len(obs) < 2:
+            out[clave] = "estable"
+        else:
+            delta = obs[-1][1] - obs[0][1]
+            out[clave] = "subiendo" if delta >= 2 else ("bajando" if delta <= -2 else "estable")
+    return out
+
+
+def _momentum_de(titulo: str, idx: dict, fecha: str = "") -> str:
+    """Busca el momentum de un título contra el índice precalculado."""
+    keys = frozenset(normalizar_titulo(titulo))
+    if not keys:
+        return ""
+    # match exacto por fecha si está, o el mejor solapamiento
+    if (fecha, keys) in idx:
+        return idx[(fecha, keys)]
+    mejor, mejor_sol = "", 0.0
+    for (f, k), mom in idx.items():
+        s = solapamiento(set(keys), set(k))
+        if s > mejor_sol and s >= 0.5:
+            mejor_sol, mejor = s, mom
+    return mejor
 
 
 def entrenar_semaforo(metricas: list) -> dict:
@@ -910,11 +979,14 @@ def entrenar_semaforo(metricas: list) -> dict:
     _rnd.Random(7).shuffle(sin_fecha)
     filas = sin_fecha + con_fecha
 
+    idx_mom = _indice_momentum(_HIST_PARA_MOMENTUM) if _HIST_PARA_MOMENTUM else {}
     X_raw, y = [], []
     for m in filas:
         ents = [e.strip() for e in (m.get("Entidades") or "").split("·") if e.strip()]
+        mom = _momentum_de(m["Titulo"], idx_mom, m.get("Fecha", "")) if idx_mom else ""
         X_raw.append(_features_nota(m["Titulo"], m.get("Seccion", ""), ents,
-                                    m.get("EnPanorama") == "sí", m.get("Hora", "")))
+                                    m.get("EnPanorama") == "sí", m.get("Hora", ""),
+                                    momentum=mom, fecha=m.get("Fecha", "")))
         y.append(etiqueta(m["Vistas"]))
 
     corte = max(int(len(X_raw) * 0.8), len(X_raw) - 400)
@@ -1277,7 +1349,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v23 · features editoriales"
+CORE_VERSION = "núcleo v24 · +momentum"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
