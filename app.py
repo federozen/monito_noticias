@@ -760,9 +760,8 @@ with tab_arg_ext:
                     f"⬇️ Panorama int. completo (~{max(n_pan,0)})",
                     panorama_txt, file_name="panorama_internacional_completo.txt",
                     mime="text/plain", use_container_width=True, key="dl_panorama_int")
-            with cprompt:
-                with st.expander("📋 Prompt sugerido para pegar junto al recorte"):
-                    st.code("""Sos analista de medios. Te paso titulares de prensa internacional que mencionan a Argentina (el medio entre corchetes indica el país). Hacé un análisis de sentimiento en español rioplatense: 1) Termómetro general (admiración/respeto/neutro/crítica/burla). 2) Desglose por tema (Selección, Messi, jugadores en Europa, clubes/mercado) con un titular textual de prueba por cada uno. 3) Desglose por país: quién elogia y quién pega. 4) El titular más elogioso y el más hostil. 5) 2-3 ideas de título para un diario deportivo argentino que salgan del análisis.""", language=None)
+            with st.expander("📋 Prompt sugerido para pegar junto al recorte"):
+                st.code("""Sos analista de medios. Te paso titulares de prensa internacional que mencionan a Argentina (el medio entre corchetes indica el país). Hacé un análisis de sentimiento en español rioplatense: 1) Termómetro general (admiración/respeto/neutro/crítica/burla). 2) Desglose por tema (Selección, Messi, jugadores en Europa, clubes/mercado) con un titular textual de prueba por cada uno. 3) Desglose por país: quién elogia y quién pega. 4) El titular más elogioso y el más hostil. 5) 2-3 ideas de título para un diario deportivo argentino que salgan del análisis.""", language=None)
             if st.button("🌡️ ¿Cómo nos ve el mundo? — análisis de sentimiento (IA)", key="btn_sent_ar"):
                 if not api_key:
                     st.error("Ingresá tu API key")
