@@ -866,6 +866,11 @@ def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
     fr = _franja_horaria(hora)
     if fr:
         f[f"franja_{fr}"] = 1
+    cl = clasificar_titulo_liviano(t)
+    f[f"func_{cl['funcion']}"] = 1
+    for e in cl["estructuras"]:
+        f[f"estruct_{e}"] = 1
+    f["calidad_titulo"] = cl["calidad"] / 10.0
     return f
 
 
@@ -1272,7 +1277,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v22 · agencias+trends"
+CORE_VERSION = "núcleo v23 · features editoriales"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
@@ -2340,6 +2345,23 @@ def fetch_trends_ar(max_items: int = 20) -> list:
     return out
 
 
+def exportar_titulos_ole(resultados: dict) -> str:
+    """Solo los títulos de Olé del panorama del día, en texto limpio —
+    para auditar la calidad editorial propia."""
+    from datetime import datetime
+    notas = resultados.get("ole", [])
+    vistos, lineas = set(), []
+    for n in notas:
+        t = n.get("titulo", "")
+        k = frozenset(normalizar_titulo(t))
+        if not k or k in vistos:
+            continue
+        vistos.add(k)
+        lineas.append(t)
+    hoy = datetime.now().strftime("%d/%m/%Y")
+    return "\n".join([f"TÍTULOS DE OLÉ — {hoy} — {len(lineas)} títulos", ""] + lineas)
+
+
 def exportar_panorama_total(resultados: dict) -> str:
     """TODOS los titulares scrapeados (nacionales + primicias + internacionales),
     con Olé primero, agrupados por medio, sin tope. Para adjuntar a cualquier IA
@@ -2379,6 +2401,81 @@ def exportar_panorama_total(resultados: dict) -> str:
     encabezado = ["PANORAMA TOTAL — TODOS LOS TITULARES SCRAPEADOS (NACIONALES + INTERNACIONALES)",
                   f"~últimas 24-48h · {hoy} · {total} titulares de {n_medios} medios · Olé primero", ""]
     return "\n".join(encabezado + partes)
+
+
+# Clasificación editorial liviana (función · estructura · calidad) ─────────────
+FUNCIONES_VALIDAS = ["NOT","SER","VIV","DEC","ANA","OPI","RUM","EXP","HUM","VIR","COM","INS"]
+FUNCIONES_DESC = {"NOT":"noticia confirmada","SER":"servicio","VIV":"en vivo",
+    "DEC":"declaración","ANA":"análisis","OPI":"opinión","RUM":"rumor/mercado",
+    "EXP":"explicador","HUM":"historia humana","VIR":"viral/color","COM":"comercial","INS":"institucional"}
+
+
+def prompt_termometro_editorial(titulos: list) -> str:
+    """Una sola llamada: clasifica el mix editorial del día y su calidad.
+    titulos: lista de strings (los títulos de Olé del día)."""
+    listado = "\n".join(f"{i+1}. {t[:160]}" for i, t in enumerate(titulos[:130]))
+    return f"""Sos analista editorial de un diario deportivo argentino. Abajo están los
+{len(titulos[:130])} titulares que Olé publicó hoy. Clasificá el PANORAMA del día
+(no título por título: el agregado) y escribí un termómetro breve en español rioplatense.
+
+FUNCIONES (para el mix): NOT=noticia confirmada, SER=servicio, VIV=en vivo,
+DEC=declaración, ANA=análisis, OPI=opinión, RUM=rumor/mercado, EXP=explicador,
+HUM=historia humana, VIR=viral/color, COM=comercial, INS=institucional.
+
+Escribí:
+
+MIX DEL DÍA — el reparto aproximado por función (ej: "45% NOT, 20% RUM, 15% VIR...").
+Qué tipo de periodismo dominó hoy.
+
+CALIDAD GENERAL — una nota del 0 al 10 al conjunto de titulares, considerando
+información, atribución de fuentes, proporcionalidad (¿exageran?) y pertinencia.
+Una línea justificando.
+
+SEÑALES DE ALERTA — si hay títulos que parecen clickbait, rumores sin fuente
+clara, o exageraciones, citá 2-3 como ejemplo (textual). Si el día fue limpio, decilo.
+
+RECOMENDACIÓN — 1 línea: qué debería cuidar la redacción mañana según lo que viste.
+
+TITULARES DE HOY:
+{listado}"""
+
+
+def clasificar_titulo_liviano(titulo: str) -> dict:
+    """Clasificación SIN IA (por palabras) de función y estructura — para features
+    del modelo, gratis. No reemplaza el análisis fino de la IA, pero da señal útil
+    y consistente a costo cero."""
+    t = titulo or ""
+    tn = _norm_texto(t)
+    # función principal (heurística por señales léxicas)
+    func = "NOT"
+    if any(k in tn for k in ["en vivo","minuto a minuto","seguilo","en directo"]):
+        func = "VIV"
+    elif '"' in t or "\u201c" in t or any(k in tn for k in ["aseguro","declaro","hablo","palabras de","apunto contra"]):
+        func = "DEC"
+    elif any(k in tn for k in PASES_KEYWORDS):
+        func = "RUM"
+    elif any(k in tn for k in ["por que","las claves","el analisis","que significa"]):
+        func = "ANA"
+    elif any(k in tn for k in ["como ver","horario","donde ver","a que hora","formaciones","posibles"]):
+        func = "SER"
+    elif any(k in tn for k in FILTROS_TEMATICOS.get("viral",{}).get("keywords",[])):
+        func = "VIR"
+    # estructuras visibles
+    estructuras = []
+    if "?" in t or "¿" in t: estructuras.append("PREG")
+    if '"' in t or "\u201c" in t: estructuras.append("CITA")
+    if ":" in t: estructuras.append("DECL")
+    if re.match(r"^\d+", t.strip()) or re.search(r"\b\d+\s+(cosas|claves|razones|motivos)\b", tn): estructuras.append("LIST")
+    if any(k in tn for k in ["esto","asi","lo que","el motivo","la razon"]) and "?" not in t: estructuras.append("TEAS")
+    # calidad aproximada (heurística conservadora 0-10)
+    q = 7
+    if "?" in t: q -= 1
+    if any(k in tn for k in ["escandalo","brutal","increible","tremendo","fuerte"]): q -= 1
+    if any(k in tn for k in PASES_KEYWORDS) and not any(k in tn for k in ["oficial","confirmado","firmo"]): q -= 1
+    if len(t) < 30: q -= 1
+    q = max(2, min(9, q))
+    banda = "SOLIDO" if q>=8 else ("CORRECTO" if q>=6 else ("DEBIL" if q>=4 else "CLICKBAIT"))
+    return {"funcion": func, "estructuras": estructuras, "calidad": q, "banda": banda}
 
 
 def prompt_sentimiento_argentina(resultados: dict) -> str:

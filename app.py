@@ -88,8 +88,8 @@ from monitor_core import _norm_texto
 from monitor_core import CORE_VERSION          # noqa: F401,F403
 from monitor_core import _extraer_cuerpo_nota, _FETCH_HEADERS  # noqa: F401
 from monitor_core import prompt_parte_nacional, prompt_parte_internacional, MODELO_ECONOMICO  # noqa: F401
-from monitor_core import parsear_reporte_ole, cruzar_metricas  # noqa: F401
-from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional, exportar_panorama_total  # noqa: F401
+from monitor_core import parsear_reporte_ole, cruzar_metricas, prompt_termometro_editorial  # noqa: F401
+from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentina, exportar_panorama_internacional, exportar_panorama_total, exportar_titulos_ole  # noqa: F401
 from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: F401
 from monitor_core import fetch_trends_ar  # noqa: F401
 import sheets_memoria
@@ -737,7 +737,14 @@ with tab_arg_ext:
             n_pan = panorama_txt.count("\n") - 4
             total_txt = exportar_panorama_total(st.session_state.resultados)
             n_total = total_txt.count("\n") - 8
-            cdesc, cpan, ctot, cprompt = st.columns([1, 1, 1, 1])
+            ole_txt = exportar_titulos_ole(st.session_state.resultados)
+            n_ole = max(ole_txt.count("\n") - 1, 0)
+            cole, cdesc, cpan, ctot = st.columns([1, 1, 1, 1])
+            with cole:
+                st.download_button(
+                    f"⬇️ Solo Olé ({n_ole})",
+                    ole_txt, file_name="titulos_ole_hoy.txt",
+                    mime="text/plain", use_container_width=True, key="dl_titulos_ole")
             with ctot:
                 st.download_button(
                     f"⬇️ TODO: nac + int (~{max(n_total,0)})",
@@ -2199,6 +2206,30 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
                     st.error(f"Error: {e}")
     if st.session_state.get("informe_patrones"):
         st.markdown(st.session_state.informe_patrones)
+
+    # ── Termómetro editorial del día (1 llamada) ──
+    st.markdown("---")
+    st.markdown("#### 📋 Termómetro editorial")
+    st.caption("Qué tipo de periodismo publicó Olé hoy y con qué calidad. Una sola llamada de IA sobre los títulos del panorama de Olé — centavos.")
+    if st.button("Analizar el mix editorial de hoy", key="btn_termo"):
+        if not api_key:
+            st.error("Ingresá tu API key")
+        elif not st.session_state.resultados:
+            st.error("Actualizá las fuentes primero")
+        else:
+            ole_titulos = [n["titulo"] for n in st.session_state.resultados.get("ole", [])]
+            if not ole_titulos:
+                st.info("No hay títulos de Olé en el panorama actual.")
+            else:
+                with st.spinner("Analizando el mix editorial..."):
+                    try:
+                        st.session_state.termometro = call_claude(
+                            prompt_termometro_editorial(ole_titulos), api_key, 1800,
+                            modelo=MODELO_ECONOMICO)
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+    if st.session_state.get("termometro"):
+        st.markdown(st.session_state.termometro)
 
     # ── 🚦 Semáforo predictivo (se entrena con las Métricas acumuladas) ──
     st.markdown("---")
