@@ -93,31 +93,58 @@ st.caption("Los temas del último panorama del vigía (Snapshot), clasificados p
 if not pack:
     st.info("Primero entrená el modelo.")
 else:
+    col_f1, col_f2 = st.columns([1, 1])
+    with col_f1:
+        solo_faltantes = st.toggle("Solo lo que Olé NO tiene", value=True,
+                                   help="Cruza el panorama con la cobertura de Olé y esconde lo ya publicado")
+    with col_f2:
+        top_n = st.selectbox("Mostrar", [10, 15, 25, "todos"], index=1)
+
     try:
         temas = sheets_memoria.leer_snapshot_anterior()
     except Exception:
         temas = []
+    # cruce con lo que Olé ya publicó (últimos días)
+    try:
+        publicados = sheets_memoria.titulos_cobertura_ole(3)
+    except Exception:
+        publicados = []
+    from monitor_core import normalizar_titulo, solapamiento
+    keys_pub = [normalizar_titulo(t) for t in publicados if t]
+
     if not temas:
         st.info("No hay Snapshot reciente — esperá la próxima corrida del vigía.")
     else:
-        filas = []
+        filas, n_ocultos = [], 0
         for t in temas:
             titulo = t.get("titulo", "") if isinstance(t, dict) else str(t)
             medios = t.get("cant_medios", "") if isinstance(t, dict) else ""
             if not titulo:
                 continue
+            # ¿Olé ya lo tiene? dos vías: la marca del snapshot y el cruce con Cobertura
+            ya_ole = bool(t.get("tiene_ole")) if isinstance(t, dict) else False
+            if not ya_ole and keys_pub:
+                k = normalizar_titulo(titulo)
+                ya_ole = any(solapamiento(k, kp) >= 0.4 for kp in keys_pub if kp)
+            if solo_faltantes and ya_ole:
+                n_ocultos += 1
+                continue
             r = predecir_semaforo(pack, titulo, "", True)
             p_verde = dict(r["probas"]).get("verde", 0)
-            filas.append((r["clase"], p_verde, titulo, medios, r["empuja"][:3]))
-        orden_clase = {"verde": 0, "amarillo": 1, "rojo": 2}
-        filas.sort(key=lambda x: (orden_clase[x[0]], -x[1]))
+            filas.append((p_verde, r["clase"], titulo, medios, r["empuja"][:3], ya_ole))
+        filas.sort(reverse=True)  # por probabilidad, de mayor a menor
+        if top_n != "todos":
+            filas = filas[:int(top_n)]
         iconos = {"verde": "🟢", "amarillo": "🟡", "rojo": "🔴"}
-        n_v = sum(1 for f in filas if f[0] == "verde")
-        st.caption(f"{len(filas)} temas en el panorama · {n_v} clasificados 🟢")
-        for clase, pv, titulo, medios, empuja in filas:
+        extra_cap = f" · {n_ocultos} ocultos (Olé ya los tiene)" if n_ocultos else ""
+        st.caption(f"Mostrando {len(filas)} temas ordenados por probabilidad{extra_cap}")
+        if not filas:
+            st.success("Olé ya tiene todo lo que hay en el panorama 👏")
+        for pv, clase, titulo, medios, empuja, ya_ole in filas:
             extra = f" · {medios} medios" if medios else ""
+            marca = " ✓" if ya_ole else ""
             razones = f"  _({', '.join(empuja)})_" if clase == "verde" and empuja else ""
-            st.markdown(f"{iconos[clase]} **{pv:.0%}** · {titulo[:120]}{extra}{razones}")
+            st.markdown(f"{iconos[clase]} **{pv:.0%}** · {titulo[:120]}{extra}{marca}{razones}")
 
 st.markdown("---")
 
