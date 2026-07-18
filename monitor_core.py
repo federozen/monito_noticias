@@ -899,6 +899,17 @@ def _features_nota(titulo: str, seccion: str = "", entidades: list = None,
 _HIST_PARA_MOMENTUM = []  # lo setea la app antes de entrenar (opcional)
 
 
+def _campo(h: dict, *nombres, default=""):
+    """Lee un campo del historial sin importar si viene 'Titulo' o 'titulo'."""
+    for n in nombres:
+        if n in h and h[n] not in (None, ""):
+            return h[n]
+        for k in h:
+            if k.lower().replace("_", "") == n.lower().replace("_", "") and h[k] not in (None, ""):
+                return h[k]
+    return default
+
+
 def _indice_momentum(historial: list) -> dict:
     """Precalcula, por tema del historial, su trayectoria de medios: devuelve
     dict {(fecha, frozenset_keys): 'subiendo'|'bajando'|'estable'} comparando
@@ -906,16 +917,17 @@ def _indice_momentum(historial: list) -> dict:
     from collections import defaultdict
     series = defaultdict(list)
     for h in historial:
-        titulo = h.get("Titulo", "")
+        titulo = str(_campo(h, "Titulo", "titulo"))
         if not titulo:
             continue
         try:
-            medios = int(h.get("CantMedios", "0") or 0)
+            medios = int(_campo(h, "CantMedios", "cant_medios", default=0) or 0)
         except Exception:
             continue
         keys = frozenset(normalizar_titulo(titulo))
         if keys:
-            series[(h.get("Fecha", ""), keys)].append((h.get("Hora", ""), medios))
+            series[(str(_campo(h, "Fecha", "fecha")), keys)].append(
+                (str(_campo(h, "Hora", "hora")), medios))
     out = {}
     for clave, obs in series.items():
         obs.sort()
@@ -1051,20 +1063,30 @@ def _dataset_incendios(historial: list, umbral_explota: int = 8,
     from datetime import datetime, timedelta
     filas = []
     for h in historial:
-        try:
-            ts = datetime.strptime(f"{h.get('Fecha','')} {h.get('Hora','')}", "%Y-%m-%d %H:%M")
-        except Exception:
+        f_txt = str(_campo(h, "Fecha", "fecha"))
+        h_txt = str(_campo(h, "Hora", "hora"))
+        ts = None
+        for fmt in ("%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M", "%d/%m %H:%M"):
+            try:
+                ts = datetime.strptime(f"{f_txt} {h_txt}".strip(), fmt)
+                if fmt == "%d/%m %H:%M":
+                    ts = ts.replace(year=datetime.now().year)
+                break
+            except Exception:
+                continue
+        if ts is None:
             continue
         try:
-            medios = int(h.get("CantMedios", "0") or 0)
+            medios = int(_campo(h, "CantMedios", "cant_medios", default=0) or 0)
         except Exception:
             continue
-        titulo = h.get("Titulo", "")
+        titulo = str(_campo(h, "Titulo", "titulo"))
         if not titulo:
             continue
+        ole_val = _campo(h, "TieneOle", "tiene_ole", default=False)
         filas.append({"ts": ts, "titulo": titulo, "medios": medios,
                       "keys": normalizar_titulo(titulo),
-                      "ole": h.get("TieneOle") == "1"})
+                      "ole": ole_val in (True, "1", 1, "sí", "si")})
     filas.sort(key=lambda f: f["ts"])
 
     X_raw, y, tss = [], [], []
@@ -1349,7 +1371,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v24 · +momentum"
+CORE_VERSION = "núcleo v25 · fix historial"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
