@@ -181,10 +181,23 @@ def debe_correr(min_minutos: int = 55) -> bool:
 
 
 def guardar_evolucion(pack: dict, n_dataset: int) -> bool:
-    """Registra los números de cada entrenamiento: la serie histórica del modelo."""
+    """Registra los números de cada entrenamiento: la serie histórica del modelo.
+    Si el entrenamiento es idéntico al último registrado (mismo dataset y mismos
+    resultados), no lo guarda — evita ensuciar la serie con corridas repetidas."""
     try:
         ws = _ws("Evolución", EVOL_HEADERS)
         ahora = datetime.now(_TZ_AR)
+        # ¿es idéntico al último? entonces no registrar
+        try:
+            previas = ws.get_all_values()
+            if len(previas) > 1:
+                ult = previas[-1]
+                if (len(ult) >= 7 and ult[2] == str(n_dataset)
+                        and ult[5] == f"{pack.get('acc_logit', 0):.0%}"
+                        and ult[6] == f"{pack.get('acc_rf', 0):.0%}"):
+                    return True  # ya está registrado ese resultado exacto
+        except Exception:
+            pass
         ws.append_row([ahora.strftime("%d/%m/%Y"), ahora.strftime("%H:%M"),
                        str(n_dataset), str(pack.get("n_test", "")),
                        f"{pack.get('acc_base', 0):.0%}", f"{pack.get('acc_logit', 0):.0%}",
