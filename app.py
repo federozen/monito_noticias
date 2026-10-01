@@ -93,9 +93,26 @@ from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentin
 from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: F401
 from monitor_core import fetch_trends_ar  # noqa: F401
 import sheets_memoria
-import ia_motores
-import para_ia
-from monitor_core import ENTREGABLES_NOTA, ESTILOS_NOTA  # noqa: F401
+# Control de versiones: si en el repo quedó algún archivo viejo, se avisa claro en vez de romperse
+import monitor_core as _mc
+_faltan = []
+if not hasattr(_mc, "ENTREGABLES_NOTA"):
+    _faltan.append("monitor_core.py (está la versión vieja)")
+try:
+    import ia_motores
+except ImportError:
+    _faltan.append("ia_motores.py (no está en el repo)")
+try:
+    import para_ia
+except ImportError:
+    _faltan.append("para_ia.py (no está en el repo)")
+if _faltan:
+    st.error("⚠️ Faltan archivos actualizados en GitHub. Subí estos, del último zip, a la raíz del repo:\n\n"
+             + "\n".join(f"- **{x}**" for x in _faltan)
+             + f"\n\nAhora el repo tiene: {getattr(_mc, 'CORE_VERSION', 'versión desconocida')}. "
+               "Tiene que decir núcleo v28 o más nuevo.")
+    st.stop()
+from monitor_core import ENTREGABLES_NOTA, ESTILOS_NOTA  # noqa: F401,E402
 
 if "resultados" not in st.session_state:
     st.session_state.resultados = {}
