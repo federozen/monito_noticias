@@ -159,21 +159,56 @@ dato antes de entregar.
 ## Informes y notas para ChatGPT o Claude (gratis, sin API key)
 
 La pestaña **📤 Para ChatGPT/Claude** arma el pedido completo (instrucciones + material)
-para que lo pegues en ChatGPT, Claude o Gemini. No usa ninguna API key.
+para pegar en ChatGPT, Claude o Gemini. No usa ninguna API key. Arriba elegís qué armar:
 
-**Informes**: elegís el tipo y los medios (todos, nacionales o internacionales) y tocás
-**📋 Armar el informe**:
-- **📋 Parte del día**: lo que domina, los huecos de Olé, lo que tiene solo Olé, lo que crece y 5 notas propuestas.
-- **⭐ Olé vs. la competencia**: dónde llega Olé, dónde no, exclusivos y cómo titula cada medio.
-- **🔁 Mercado de pases**: tablero por club con estado de cada operación y nivel de certeza.
-- **🌍 Argentinos en el mundo**: qué dice la prensa internacional y notas posibles.
-- **💬 Panorama para preguntar**: todos los titulares, para hacerle preguntas.
+**🏆 Los 30 temas del deporte** — junta TODOS los titulares nacionales e
+internacionales, medio por medio, y le pide a la IA que los agrupe en los temas
+principales (10, 15, 20, 30 o 40), del que más medios tiene al que menos: qué pasa,
+qué es rumor, qué medios lo tienen y títulos de ejemplo. Olé entra como un medio más
+(o lo sacás). Es largo: si la IA no lo acepta pegado, descargá el .txt y adjuntalo.
 
-**Notas**: elegís un tema, marcás las notas y tocás **📋 Pedido para ChatGPT/Claude**.
-Lee el texto de cada nota y arma el pedido con el mismo método que la nota con IA
-(inventario de datos, ángulo, nota y control). El mismo botón está en **✍️ Nota**
-(Agenda y Tendencias) y en la **Canasta**.
+**🗂️ Qué pasa en una categoría (sin Olé)** — como el informe de los panoramas.
+Elegís la categoría (todo, nacionales, internacionales, primicias, mercado de pases,
+polémicas, lesiones, previas, declaraciones, arbitraje, virales… o las palabras que
+quieras, por ejemplo `river, gallardo`) y tocás **📋 Armar el informe de la categoría**.
+Junta lo que publican todos los medios, ordenado por historia (primero lo que tienen
+varios medios, después el resto medio por medio), sin comparar con Olé. Si querés,
+tildá *Sumar a Olé como un medio más*.
 
-Con el pedido listo: el ícono de copiar está arriba a la derecha del recuadro
-(en *Ver el pedido completo*), o **📥 Descargar .txt** para adjuntarlo si es muy largo.
-Los botones **Abrir ChatGPT / Claude / Gemini** abren cada uno en otra pestaña.
+**🔎 Un tema por palabra clave** — escribís una palabra (o varias, con coma), aparecen
+las notas de todos los medios, marcás las que quieras (vienen sugeridas una por medio;
+con **➕ Sumar otras notas** agregás más) y elegís:
+- **📋 Informe del tema**: lee el texto de las notas y arma el pedido para que la IA te
+  cuente todo lo que se sabe: lo confirmado, los rumores, las versiones distintas, las
+  declaraciones, la cronología y qué falta saber. Después le podés seguir preguntando.
+- **📋 Pedido para ChatGPT/Claude**: el pedido para que escriba la nota de Olé.
+
+**📊 Informes de Olé** — parte del día, Olé vs. la competencia, mercado de pases,
+argentinos en el mundo y panorama para preguntar.
+
+**✍️ Nota de un tema del ranking** — elegís un tema caliente y armás el pedido de la nota.
+
+Los botones **📋 Informe del tema** y **📋 Pedido** también están en **✍️ Nota**
+(Agenda y Tendencias). En la Canasta está el pedido de la nota.
+
+Con el pedido listo: abrí *Ver el pedido completo* y tocá el ícono de copiar (arriba
+a la derecha), o **📥 Descargar .txt** para adjuntarlo si es muy largo. Los botones
+**Abrir ChatGPT / Claude / Gemini** abren cada uno en otra pestaña.
+
+## Buscar en todos los medios a la vez
+
+Arriba de **🇦🇷 Nacionales**, **🌍 Internacionales** y **📡 Primicias** hay un buscador que
+busca en todos los medios de esa pestaña a la vez (sin importar tildes ni mayúsculas;
+varias palabras, con coma). Muestra los resultados agrupados por medio y, con
+**✍️ Usar estas notas**, armás el informe del tema, el pedido de la nota o las mandás a la
+canasta. Si borrás la búsqueda, vuelve la vista medio por medio. La pestaña **🔎 Buscar**
+hace lo mismo con todos los medios, o con los nacionales, internacionales o primicias.
+
+## El pedido de la nota para ChatGPT o Claude
+
+El botón **📋 Pedido para ChatGPT/Claude** arma un pedido pensado para el chat: la IA
+trabaja en 7 pasos a la vista (inventario de datos con su fuente, lo que no sabemos,
+ángulo, la nota, control oración por oración, versión final lista para copiar y datos
+para la web: título SEO, descripción, etiquetas y texto para redes). Le pide no buscar
+en internet, no nombrar a los otros medios, poner [COMPLETAR] en vez de inventar y, al
+final, te pregunta si querés otro ángulo o una versión más corta.

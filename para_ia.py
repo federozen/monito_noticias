@@ -156,3 +156,274 @@ Hoy es {fecha}. Alcance: {nombre_alc}.
 {_reglas()}
 
 {material}"""
+
+
+# ═══════════════ Informe de una categoría (sin Olé) y tema por palabra clave ═══════════════
+from monitor_core import (FILTROS_TEMATICOS, FUENTES_INT, FUENTES_ESP, TODAS_FUENTES,  # noqa: E402
+                          calcular_tendencias, _norm_texto)
+
+
+def categorias() -> dict:
+    """Categorías para el informe "qué pasa en…", como las secciones de los panoramas."""
+    c = {"todo": "📰 Todo el panorama",
+         "nac": "🇦🇷 Medios nacionales",
+         "int": "🌍 Medios internacionales",
+         "esp": "📡 Primicias e instituciones"}
+    c.update({k: v["titulo"] for k, v in FILTROS_TEMATICOS.items()})
+    c["palabras"] = "🔎 Club, nombre o palabras que elijas"
+    return c
+
+
+def recorte_categoria(resultados: dict, cat: str, palabras: str = "", con_ole: bool = False) -> dict:
+    """Los titulares de una categoría, medio por medio (sin Olé, salvo que se pida)."""
+    ids_int = {f["id"] for f in FUENTES_INT}
+    ids_esp = {f["id"] for f in FUENTES_ESP}
+    kws = None
+    if cat in FILTROS_TEMATICOS:
+        kws = [_norm_texto(k) for k in FILTROS_TEMATICOS[cat]["keywords"]]
+    elif cat == "palabras":
+        kws = [_norm_texto(k.strip()) for k in palabras.split(",") if k.strip()]
+    out = {}
+    for f in TODAS_FUENTES:
+        fid = f["id"]
+        if fid == "ole" and not con_ole:
+            continue
+        if cat == "nac" and fid not in FUENTES_NAC_IDS:
+            continue
+        if cat == "int" and fid not in ids_int:
+            continue
+        if cat == "esp" and fid not in ids_esp:
+            continue
+        notas = resultados.get(fid) or []
+        if kws is not None:
+            notas = [n for n in notas if any(k in _norm_texto(n.get("titulo", "")) for k in kws)]
+        if notas:
+            out[fid] = notas
+    return out
+
+
+def pedido_categoria(resultados: dict, cat: str, palabras: str = "", con_ole: bool = False,
+                     max_por_medio: int = 15, max_historias: int = 80) -> str:
+    """Informe de todo lo que pasa en una categoría, sin compararse con Olé.
+    Las historias que comparten varios medios van primero; después, el resto medio por medio."""
+    nombre = categorias().get(cat, cat)
+    if cat == "palabras":
+        nombre = f"🔎 {palabras.strip()}"
+    rec = recorte_categoria(resultados, cat, palabras, con_ole)
+    nombres = {f["id"]: f["nombre"] for f in TODAS_FUENTES}
+    hist = calcular_tendencias(rec)[:max_historias]
+    usados = set()
+    lineas_h = []
+    for k, t in enumerate(hist, 1):
+        medios = sorted({n["fuente"]["nombre"] for n in t["noticias"]})
+        otros, vistos = [], {frozenset(normalizar_titulo(t["titulo"]))}
+        for n in t["noticias"]:
+            usados.add((n["fuente"]["id"], n["noticia"]["titulo"]))
+            kk = frozenset(normalizar_titulo(n["noticia"]["titulo"]))
+            if kk not in vistos and len(otros) < 3:
+                vistos.add(kk); otros.append(f"[{n['fuente']['nombre']}] {n['noticia']['titulo']}")
+        linea = f"[H{k}] {len(medios)} medios · {t['titulo']}\n      Medios: {', '.join(medios)}"
+        if otros:
+            linea += "\n      Otros títulos: " + " | ".join(otros)
+        lineas_h.append(linea)
+    sueltas, total = [], 0
+    for fid, notas in rec.items():
+        resto = [n["titulo"] for n in notas if (fid, n["titulo"]) not in usados][:max_por_medio]
+        if resto:
+            sueltas.append(f"\n--- {nombres.get(fid, fid)} ---\n" + "\n".join(f"- {t}" for t in resto))
+            total += len(resto)
+    n_medios = len(rec)
+    if not rec:
+        material = "(no hay titulares cargados en esta categoría: probá con otra o actualizá las fuentes)"
+    else:
+        material = (f"=== HISTORIAS QUE PUBLICAN VARIOS MEDIOS ({len(lineas_h)}) ===\n"
+                    + ("\n".join(lineas_h) or "(ninguna historia la tienen dos medios o más)")
+                    + f"\n\n=== EL RESTO, MEDIO POR MEDIO ({total} titulares) ==="
+                    + ("".join(sueltas) or "\n(nada más)"))
+    return f"""Sos un periodista deportivo argentino que le cuenta a la redacción, de forma clara y ordenada, todo lo que está pasando en esta categoría: {nombre}. Abajo están los titulares de hoy ({_fecha()}) de {n_medios} medios.
+
+Armá un informe con estas partes:
+1. EN 5 LÍNEAS: lo más importante que está pasando.
+2. TEMA POR TEMA: de la historia que más medios tienen a la que menos. Para cada una: qué se sabe, qué es rumor o versión de un solo medio, si hay versiones distintas entre medios, y qué viene. Citá los medios entre corchetes.
+3. LO QUE PUEDE CRECER: temas chicos que conviene mirar en las próximas horas.
+4. PREGUNTAS ABIERTAS: lo que todavía no se sabe y habría que chequear.
+5. NOTAS POSIBLES: 5 títulos con su ángulo, cada uno con las historias [H…] de las que sale.
+Después, quedate esperando mis preguntas sobre este material.
+
+{_reglas()}
+
+{material}"""
+
+
+def pedido_tema(tema: str, notas_enriquecidas: list) -> str:
+    """Informe de un tema a partir de varias notas (con su texto): todo lo que se sabe,
+    lo confirmado, lo que no, las versiones y las declaraciones."""
+    con = [t for t in notas_enriquecidas if t.get("ok")]
+    sin = [t for t in notas_enriquecidas if not t.get("ok")]
+    medios = sorted({t["fuente"]["nombre"] for t in notas_enriquecidas})
+    bloque = "\n\n".join(
+        f"── [{k}] {t['fuente']['nombre']} — {t['noticia']['titulo']}\nLink: {t['noticia'].get('url') or '(sin link)'}\nTEXTO:\n{t['cuerpo']}"
+        for k, t in enumerate(con, 1))
+    titulos = "\n".join(f"  • [{t['fuente']['nombre']}] {t['noticia']['titulo']}" for t in sin)
+    material = ""
+    if con:
+        material += f"=== NOTAS CON TEXTO ({len(con)}) ===\n{bloque}"
+    if titulos:
+        material += f"\n\n=== SOLO TÍTULOS ({len(sin)}) ===\n{titulos}"
+    return f"""Sos un periodista deportivo argentino. Te paso {len(notas_enriquecidas)} notas de {len(medios)} medio(s) sobre este tema: {tema}. Hoy es {_fecha()}.
+
+Armá un INFORME DEL TEMA con estas partes:
+1. EN 3 LÍNEAS: qué está pasando.
+2. LO CONFIRMADO: los hechos oficiales o que publican varios medios, cada uno con el medio entre corchetes.
+3. LO QUE NO ESTÁ CONFIRMADO: rumores, trascendidos y lo que publica un solo medio, con quién lo dice.
+4. VERSIONES DISTINTAS: dónde no coinciden los medios.
+5. DECLARACIONES: las frases textuales, con quién las dijo y dónde.
+6. CRONOLOGÍA: el orden de los hechos, si el material tiene fechas u horarios.
+7. QUÉ FALTA SABER: las preguntas que habría que chequear antes de publicar.
+8. NOTAS POSIBLES: 3 títulos con su ángulo.
+Después, quedate esperando mis pedidos (por ejemplo: "escribí la nota", "haceme 5 títulos", "resumilo para redes").
+
+REGLAS: usá solo el material de abajo; no inventes datos, cifras, resultados, fechas ni declaraciones. Separá siempre lo confirmado de lo que no. Español rioplatense, directo.{bloque_criterios()}
+
+=== MATERIAL ===
+{material}"""
+
+
+# ═══════════════ Pedido de nota para pegar en ChatGPT o Claude ═══════════════
+LARGOS_CHAT = {
+    "Nota completa": "entre 400 y 600 palabras, con un primer párrafo suelto y después 2 o 3 intertítulos concretos y periodísticos (\"La lesión y los plazos\", nunca \"Contexto\")",
+    "Nota breve": "entre 150 y 250 palabras, en 3 o 4 párrafos, sin intertítulos",
+}
+ESTILOS_CHAT = {
+    "Informativa": "informativa, con el tono de Olé: futbolera, ágil y directa, sin opinión",
+    "Analítica": "analítica: además de qué pasó, por qué importa, qué cambia y qué viene, siempre con lo que dice el material y sin opinión propia",
+    "Urgente/Flash": "urgente: un despacho corto (hasta 120 palabras) donde la primera oración cuenta toda la noticia",
+}
+
+
+def pedido_nota_chat(tema: str, notas_enriquecidas: list, estilo: str = "Informativa",
+                     tipo: str = "Nota completa", contexto: str = "") -> str:
+    """El pedido para que ChatGPT o Claude escriban una nota lista para Olé.
+    A diferencia de la nota que se escribe dentro de la app, acá la IA muestra todo su trabajo
+    en pasos (inventario, lo que no sabemos, ángulo, nota, control) y termina con la versión
+    final lista para copiar y los datos para la web."""
+    if tipo not in LARGOS_CHAT:
+        # Titulares o esqueleto: sirve el pedido de siempre
+        from monitor_core import prompt_nota_rapida
+        return prompt_nota_rapida(tema, notas_enriquecidas, estilo, tipo, contexto)
+    con = [t for t in notas_enriquecidas if t.get("ok")]
+    sin = [t for t in notas_enriquecidas if not t.get("ok")]
+    medios = sorted({t["fuente"]["nombre"] for t in notas_enriquecidas})
+    largo = "hasta 120 palabras, en 2 o 3 párrafos cortos" if estilo == "Urgente/Flash" else LARGOS_CHAT[tipo]
+    bloque = "\n\n".join(
+        f"### [{k}] {t['fuente']['nombre']} — {t['noticia']['titulo']}\nLink: {t['noticia'].get('url') or '(sin link)'}\n\n{t['cuerpo']}"
+        for k, t in enumerate(con, 1))
+    titulos = "\n".join(f"- [{t['fuente']['nombre']}] {t['noticia']['titulo']}" for t in sin)
+    material = ""
+    if con:
+        material += f"## NOTAS COMPLETAS ({len(con)})\n\n{bloque}"
+    else:
+        material += "(No se pudo leer el texto de ninguna nota: trabajá con los títulos, avisá que el material es limitado y usá [COMPLETAR] donde falte.)"
+    if titulos:
+        material += f"\n\n## OTROS TÍTULOS SOBRE ESTA HISTORIA ({len(sin)}) — solo sirven para saber qué publicó cada medio\n{titulos}"
+    if contexto:
+        material += (f"\n\n## LO QUE APORTA EL REDACTOR DE OLÉ\n{contexto}\n"
+                     "(Esto es información propia de Olé: podés usarlo como dato CONFIRMADO, con fuente \"Redactor\".)")
+
+    return f"""Sos redactor de Olé, el diario deportivo argentino. Tenés que escribir una nota lista para publicar en la web de Olé, para lectores argentinos, sobre esta historia: {tema}.
+Usá ÚNICAMENTE el material de abajo: lo que publicaron {len(medios)} medio(s) ({len(con)} nota(s) completa(s) y {len(sin)} título(s) más).
+Hoy es {_fecha()}: tenelo en cuenta para "hoy", "ayer" y "mañana".
+
+ANTES DE EMPEZAR
+- No busques en internet ni uses otras fuentes. Si tenés la búsqueda web activada, no la uses: trabajá solo con este material.
+- LA REGLA MÁS IMPORTANTE: NO AGREGUES NADA QUE NO ESTÉ EN EL MATERIAL. Ni datos, ni cifras, ni fechas, ni edades, ni estadísticas, ni resultados, ni antecedentes, ni contexto histórico, ni declaraciones, ni nombres, aunque creas saberlos. Tu memoria puede estar desactualizada y un dato falso publicado es un error grave. Si para que la nota quede completa hace falta un dato que no está, escribí [COMPLETAR: qué dato falta] en ese lugar y seguí.
+
+Trabajá EN PASOS, en este orden, y mostrá cada paso con su título.
+
+PASO 1 · INVENTARIO DE DATOS
+Numerá cada dato utilizable del material: [D1], [D2], etc. Para cada uno: el dato, el medio que lo publica y si es CONFIRMADO (oficial, declaración pública o lo dicen varios medios) o ATRIBUIDO (un solo medio, una fuente anónima o un trascendido). Copiá las declaraciones textuales tal cual, con quién las dijo; si están en otro idioma, traducilas y marcalas como traducción. Si dos medios dicen cosas distintas sobre un mismo dato, anotá las dos versiones.
+
+PASO 2 · LO QUE NO SABEMOS
+La lista de lo que la nota NO puede afirmar porque el material no lo dice (por ejemplo: cifras, fechas, si ya firmó, qué dijo el club). Esto no puede aparecer como hecho en la nota.
+
+PASO 3 · EL ÁNGULO
+Elegí UN ángulo y explicá en dos líneas por qué. El título compite por el significado, no por la información; el primer párrafo instala el ángulo, no la crónica. Usá el ángulo argentino (un club, un jugador argentino, la Selección) solo si está en el material; si la historia es del exterior y no lo tiene, no lo fuerces.
+{FRAMEWORK_ANGULOS}
+
+PASO 4 · LA NOTA
+- Tres opciones de título: cortos (hasta 12 palabras), directos, con fuerza y en el estilo de Olé, con el nombre propio adelante cuando ayude a encontrarla en Google. Ninguno puede prometer lo que el cuerpo no sostiene. Marcá el que elegís.
+- Bajada: una o dos oraciones con el dato principal.
+- Cuerpo: {largo}. Estilo {ESTILOS_CHAT.get(estilo, ESTILOS_CHAT["Informativa"])}. Arrancá con lo más fuerte y nuevo; después los detalles y las declaraciones; cerrá con lo que viene, solo si el material lo dice.
+- La nota es de Olé: NO nombres a los medios de donde sale la información. Los medios y periodistas del inventario son solo para tu control.
+- Escribí con tus propias palabras: no copies oraciones ni párrafos de las notas del material.
+- Lo CONFIRMADO va como hecho. Lo ATRIBUIDO nunca va como hecho: usá "trascendió que", "en el club aseguran", "habría", "estaría", sin nombrar al medio. Nunca escribas "pudo saber Olé" ni presentes nada como averiguación propia. Si hay versiones distintas, contá las dos sin decir quién publicó cada una.
+- Las citas textuales se atribuyen a la persona que las dijo ("dijo Gallardo en conferencia"), nunca al medio. Si salen de una entrevista con otro medio, poné "en una entrevista", sin nombrarlo.
+- Español rioplatense. Clubes como los nombra la prensa argentina: River, Boca, Racing, San Lorenzo, Independiente, Huracán, Vélez, Lanús. "La Selección" (no "la Albiceleste"). Jugadores por apellido desde la segunda mención, sin apodos. Cargos en minúscula ("el entrenador Scaloni").
+- Párrafos cortos (hasta 60 palabras). Sin relleno, sin frases hechas ("en este contexto", "cabe destacar", "a su vez") y sin adjetivos que valoren lo que el material no valora ("histórico", "increíble").{bloque_criterios()}
+
+PASO 5 · CONTROL
+Recorré la nota oración por oración y mostrá una lista: cada afirmación con el dato del inventario que la sostiene ([D3], [D7]…). Si una afirmación no tiene respaldo, sacala o reemplazala por [COMPLETAR]. Revisá que los títulos no digan más que el cuerpo, que lo ATRIBUIDO esté en condicional o con "trascendió", que no aparezca el nombre de ningún medio y que no haya oraciones copiadas del material. Después listá todos los [COMPLETAR] que quedaron.
+
+PASO 6 · VERSIÓN FINAL
+La nota corregida después del control, completa y lista para copiar y pegar, en un solo bloque: título elegido, bajada y cuerpo (con sus intertítulos, si lleva). Sin las referencias [D…] ni comentarios tuyos.
+
+PASO 7 · PARA LA WEB Y REDES
+- Título SEO (hasta 70 caracteres) y descripción para Google (hasta 155 caracteres).
+- 5 etiquetas (nombres propios y temas).
+- Un texto para redes (hasta 280 caracteres).
+Todo sin agregar datos que no estén en la nota.
+
+Al final, preguntame si quiero otro ángulo, una versión más corta o cambiar el título.
+
+=== MATERIAL ===
+
+{material}
+"""
+
+
+# ═══════════════ Los 30 temas del deporte (todos los titulares, sin mirar a Olé) ═══════════════
+def pedido_30_temas(resultados: dict, alcance: str = "todo", con_ole: bool = True, cantidad: int = 30,
+                    max_por_medio: int = 30) -> str:
+    """Todos los titulares nacionales e internacionales para que la IA los agrupe en los
+    temas principales del deporte. Olé entra como un medio más (o se saca), sin comparar."""
+    ids_int = {f["id"] for f in FUENTES_INT}
+    bloques, total, medios = [], 0, 0
+    for f in TODAS_FUENTES:
+        fid = f["id"]
+        if fid == "ole" and not con_ole:
+            continue
+        if alcance == "nac" and fid not in FUENTES_NAC_IDS and fid not in FUENTES_ESP_IDS:
+            continue
+        if alcance == "int" and fid not in ids_int:
+            continue
+        vistos, lineas = set(), []
+        for n in (resultados.get(fid) or []):
+            k = frozenset(normalizar_titulo(n.get("titulo", "")))
+            if not k or k in vistos:
+                continue
+            vistos.add(k); lineas.append(n["titulo"])
+            if len(lineas) >= max_por_medio:
+                break
+        if lineas:
+            origen = "internacional" if fid in ids_int else "nacional"
+            bloques.append(f"\n--- {f['nombre']} ({origen}) ---\n" + "\n".join(f"- {t}" for t in lineas))
+            total += len(lineas); medios += 1
+    nombre_alc = ALCANCES.get(alcance, ALCANCES["todo"])
+    return f"""Sos editor de deportes. Abajo están TODOS los titulares de hoy ({_fecha()}) de {medios} medios ({nombre_alc.lower()}), medio por medio: {total} titulares en total. Quiero entender qué está pasando en el deporte, sin importar qué medio lo publica.
+
+Agrupá los titulares en los {cantidad} TEMAS PRINCIPALES, ordenados del que más medios tiene al que menos. Un tema es una misma historia o asunto (un partido, un pase, una lesión, una polémica, un torneo), aunque cada medio lo titule distinto.
+
+Para cada tema:
+1. Nombre del tema (corto) y deporte o competencia.
+2. Cuántos medios lo tienen y cuáles; aclará si es más nacional, más internacional o de los dos.
+3. Qué pasa, en dos o tres oraciones: lo que se sabe y lo que es rumor o versión de un solo medio.
+4. Dos o tres títulos de ejemplo, textuales, con el medio entre corchetes.
+
+Después de los {cantidad}:
+- OTROS TEMAS: los que quedaron afuera, en una línea cada uno.
+- LO QUE MIRA EL MUNDO Y LO QUE MIRA LA ARGENTINA: qué temas dominan en los medios internacionales y cuáles en los nacionales, y cuáles comparten.
+- PARA SEGUIR: 5 temas que pueden crecer en las próximas horas.
+
+REGLAS: usá solo estos titulares; no inventes resultados, cifras, nombres ni datos que no estén. Si un título está en otro idioma, escribí el tema en español. Si dos títulos parecen del mismo tema pero no estás seguro, separalos. Español rioplatense, claro y sin relleno. Si el texto es muy largo para leerlo de una vez, avisame antes de responder.
+
+=== TITULARES, MEDIO POR MEDIO ==={''.join(bloques) or chr(10) + '(no hay titulares cargados: actualizá las fuentes)'}"""

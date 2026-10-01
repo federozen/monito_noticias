@@ -104,13 +104,15 @@ except ImportError:
     _faltan.append("ia_motores.py (no está en el repo)")
 try:
     import para_ia
+    if not hasattr(para_ia, "pedido_30_temas"):
+        _faltan.append("para_ia.py (está la versión vieja)")
 except ImportError:
     _faltan.append("para_ia.py (no está en el repo)")
 if _faltan:
     st.error("⚠️ Faltan archivos actualizados en GitHub. Subí estos, del último zip, a la raíz del repo:\n\n"
              + "\n".join(f"- **{x}**" for x in _faltan)
              + f"\n\nAhora el repo tiene: {getattr(_mc, 'CORE_VERSION', 'versión desconocida')}. "
-               "Tiene que decir núcleo v28 o más nuevo.")
+               "Tiene que decir núcleo v30 o más nuevo.")
     st.stop()
 from monitor_core import ENTREGABLES_NOTA, ESTILOS_NOTA  # noqa: F401,E402
 
@@ -305,7 +307,7 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
         st.info("Este tema no tiene notas para usar.")
         return
     medios = len({n["fuente"]["id"] for n in pool})
-    st.markdown(f"**✍️ Una nota con lo que publicaron {medios} medio(s)** · elegí las notas (sugerimos una por medio):")
+    st.markdown(f"**{medios} medio(s) publicaron sobre esto** · elegí las notas (sugerimos una por medio):")
     etiquetas = [f"{n['fuente']['nombre']} · {n['noticia']['titulo'][:95]}" for n in pool]
     sel_key = f"{key}_sel"
     if sel_key not in st.session_state:
@@ -341,7 +343,7 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
     tipo = c5.selectbox("Qué querés", ENTREGABLES_NOTA, key=f"{key}_tipo")
     contexto = st.text_area("Lo que sabés vos (opcional)", key=f"{key}_ctx", height=70,
                             placeholder="Un dato propio, una declaración que tenés, el ángulo que querés…")
-    c6, c8, c7 = st.columns([2, 2, 1])
+    c6, c8, c9, c7 = st.columns([2, 2, 2, 1])
     generar = c6.button(f"✦ Escribir con {len(elegidas)} nota(s)", type="primary", use_container_width=True,
                         disabled=not elegidas, key=f"{key}_gen")
     if c8.button("📋 Pedido para ChatGPT/Claude", use_container_width=True, disabled=not elegidas, key=f"{key}_ped",
@@ -349,7 +351,13 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
         items = [pool[i] for i in elegidas]
         with st.spinner("🔍 Leyendo las notas…"):
             enr = _cuerpos(items, max_notas=8)
-        st.session_state[f"{key}_pedido"] = prompt_nota_rapida(tema, enr, estilo, tipo, contexto.strip())
+        st.session_state[f"{key}_pedido"] = para_ia.pedido_nota_chat(tema, enr, estilo, tipo, contexto.strip())
+    if c9.button("📋 Informe del tema para ChatGPT/Claude", use_container_width=True, disabled=not elegidas, key=f"{key}_inf",
+                 help="Gratis: todo lo que dicen las notas elegidas (confirmado, rumores, versiones, declaraciones) para pegarlo en la IA"):
+        items = [pool[i] for i in elegidas]
+        with st.spinner("🔍 Leyendo las notas…"):
+            enr = _cuerpos(items, max_notas=8)
+        st.session_state[f"{key}_pedido"] = para_ia.pedido_tema(tema, enr)
     if c7.button("🧺 A la canasta", use_container_width=True, disabled=not elegidas, key=f"{key}_can"):
         for i in elegidas:
             _canasta_agregar(pool[i]["noticia"]["titulo"], pool[i]["noticia"].get("url"), pool[i]["fuente"], scrape_cuerpo=False)
@@ -375,6 +383,37 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
     if st.session_state.get(f"{key}_res"):
         st.divider()
         mostrar_nota_ia(st.session_state[f"{key}_res"], f"{key}_res", st.session_state.get(f"{key}_res_ok"))
+
+
+def buscador_medios(fuentes: list, key: str, etiqueta: str, mostrar_vacio: bool = False):
+    """Busca una o varias palabras en TODOS los medios del grupo a la vez (sin importar tildes ni
+    mayúsculas) y deja usar los resultados para un informe, una nota o la canasta."""
+    total = sum(len(resultados.get(f["id"], [])) for f in fuentes)
+    q = st.text_input(f"🔎 Buscar en los {len(fuentes)} medios {etiqueta} ({total} notas)", key=f"{key}_q",
+                      placeholder="Una palabra o varias separadas por coma: Paredes, Gallardo…")
+    if not q.strip():
+        return False
+    kws = [_norm_texto(k.strip()) for k in q.split(",") if k.strip()]
+    pool, por_medio = [], []
+    for f in fuentes:
+        hits = [n for n in resultados.get(f["id"], []) if any(k in _norm_texto(n.get("titulo", "")) for k in kws)]
+        if hits:
+            por_medio.append((f, hits))
+            pool += [{"fuente": f, "noticia": n} for n in hits]
+    if not pool:
+        st.warning(f"Nada con “{q.strip()}” en los medios {etiqueta}. Probá con otra palabra o con menos letras.")
+        return True
+    st.success(f"**{len(pool)}** notas con “{q.strip()}” en **{len(por_medio)}** medios {etiqueta}.")
+    with st.container(border=True):
+        st.markdown("**✍️ Usar estas notas**: informe del tema o nota (para ChatGPT/Claude o con la IA de la app) y canasta.")
+        if st.toggle("Abrir", key=f"{key}_usar"):
+            panel_nota_tema(q.strip(), pool[:60], f"{key}_{hash(q.strip().lower())}")
+    for f, hits in por_medio:
+        st.markdown(f'<div style="margin-top:10px"><span style="color:{f["color"]};font-weight:700">● {f["nombre"]}</span> '
+                    f'<span style="color:#657786;font-size:12px">({len(hits)})</span></div>', unsafe_allow_html=True)
+        for n in hits:
+            st.markdown(f'&nbsp;&nbsp;• [{n["titulo"]}]({n["url"]})' if n.get("url") else f'&nbsp;&nbsp;• {n["titulo"]}')
+    return True
 
 
 def render_news_cards(noticias: list, fuente: dict, resultados: dict, cols_per_row: int = 3):
@@ -830,53 +869,18 @@ with tab_agenda:
 # ─── TAB BUSCADOR GLOBAL ─────────────────────────────────────────────────────
 with tab_buscar:
     st.subheader("🔎 Buscar en todas las fuentes")
-    total_notas = sum(len(v) for v in resultados.values())
-    if not total_notas:
+    if not sum(len(v) for v in resultados.values()):
         st.info("Actualizá las fuentes primero.")
     else:
-        c_q, c_a = st.columns([3, 1])
-        with c_q:
-            q_global = st.text_input(
-                f"Buscar entre {total_notas} noticias de {len(TODAS_FUENTES)} fuentes",
-                key="q_global", placeholder="ej: Mastantuono, penal, Scaloni...",
-            )
-        with c_a:
-            ambito_b = st.selectbox("Ámbito", ["Todas", "Nacionales", "Internacionales"], key="ambito_b")
-
-        if q_global and len(q_global.strip()) >= 3:
-            q = q_global.strip().lower()
-            fuentes_b = (FUENTES_NAC if ambito_b == "Nacionales"
-                         else FUENTES_INT if ambito_b == "Internacionales"
-                         else TODAS_FUENTES)
-            hits_total = 0
-            for f in fuentes_b:
-                hits = [n for n in resultados.get(f["id"], []) if q in n["titulo"].lower()]
-                if not hits:
-                    continue
-                hits_total += len(hits)
-                st.markdown(
-                    f'<div style="margin-top:10px"><span style="color:{f["color"]};'
-                    f'font-weight:700">● {f["nombre"]}</span> '
-                    f'<span style="color:#657786;font-size:12px">({len(hits)})</span></div>',
-                    unsafe_allow_html=True,
-                )
-                for n in hits[:8]:
-                    if n.get("url"):
-                        st.markdown(f'&nbsp;&nbsp;• [{n["titulo"]}]({n["url"]})')
-                    else:
-                        st.markdown(f'&nbsp;&nbsp;• {n["titulo"]}')
-                if len(hits) > 8:
-                    st.caption(f"   …y {len(hits) - 8} más en {f['nombre']}")
-            if hits_total == 0:
-                st.warning(f'Nada con "{q_global}" en {ambito_b.lower()}. Probá con menos letras o sin acentos.')
-            else:
-                st.caption(f"{hits_total} resultados en total")
-        elif q_global:
-            st.caption("Escribí al menos 3 letras.")
+        _amb = {"Todas": (TODAS_FUENTES, "de todas las fuentes"), "Nacionales": (FUENTES_NAC, "nacionales"),
+                "Internacionales": (FUENTES_INT, "internacionales"), "Primicias": (FUENTES_ESP, "de primicias")}
+        ambito_b = st.radio("Ámbito", list(_amb), horizontal=True, key="ambito_b")
+        buscador_medios(_amb[ambito_b][0], f"busca_glob_{ambito_b}", _amb[ambito_b][1])
 
 # ─── TAB NACIONALES ──────────────────────────────────────────────────────────
 with tab_nac:
-    st.caption("Elegí un medio (arriba o en la columna lateral):")
+  if not buscador_medios(FUENTES_NAC, "busca_nac", "nacionales"):
+    st.caption("O elegí un medio (arriba o en la columna lateral):")
     _nombres_nac = [f["nombre"] for f in FUENTES_NAC]
     _op_nac = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_NAC}
     _labels_nac = list(_op_nac.keys())
@@ -966,7 +970,7 @@ with tab_esp:
     st.caption("Periodistas de mercado, fuentes oficiales, designaciones arbitrales y agregadores temáticos. Traen lo que los diarios tardan o no tienen.")
     if not resultados:
         st.info("Actualizá las fuentes primero.")
-    else:
+    elif not buscador_medios(FUENTES_ESP, "busca_esp", "de primicias"):
         cols_esp = st.columns(3)
         for i, f in enumerate(FUENTES_ESP):
             notas = resultados.get(f["id"], [])
@@ -1047,7 +1051,8 @@ with tab_arg_ext:
                 )
 
 with tab_int:
-    st.caption("Elegí un medio (arriba o en la columna lateral):")
+  if not buscador_medios(FUENTES_INT, "busca_int", "internacionales"):
+    st.caption("O elegí un medio (arriba o en la columna lateral):")
     _op_int = {f'{f["nombre"]} ({len(resultados.get(f["id"],[]))})': f["nombre"] for f in FUENTES_INT}
     _labels_int = list(_op_int.keys())
 
@@ -1983,33 +1988,98 @@ with tab_paraia:
     st.markdown("### 📤 Informes y notas para ChatGPT o Claude")
     st.caption("Arma el pedido completo (instrucciones + material) para pegar en ChatGPT, Claude o Gemini. "
                "Gratis: no usa ninguna API key.")
-    st.markdown("#### 📊 Informes")
-    tipo_inf = st.radio("Tipo de informe", list(para_ia.TIPOS_INFORME), key="pia_tipo",
-                        format_func=lambda k: para_ia.TIPOS_INFORME[k][0], horizontal=True)
-    st.caption(para_ia.TIPOS_INFORME[tipo_inf][1])
-    alc_inf = "todo"
-    if tipo_inf not in ("libre", "exterior"):
-        alc_inf = st.radio("Medios", list(para_ia.ALCANCES), key="pia_alc",
-                           format_func=lambda k: para_ia.ALCANCES[k], horizontal=True)
-    if st.button("📋 Armar el informe", type="primary", key="pia_btn_inf"):
-        st.session_state["pia_informe"] = para_ia.pedido_informe(resultados, tendencias, ole_analisis, tipo_inf, alc_inf)
-        st.session_state["pia_informe_tipo"] = tipo_inf
-    if st.session_state.get("pia_informe"):
-        mostrar_pedido(st.session_state["pia_informe"], "pia_inf_out", f"informe_{st.session_state.get('pia_informe_tipo', 'ia')}")
-
+    _CAMINOS = {
+        "temas30": "🏆 Los 30 temas del deporte (todos los titulares)",
+        "categoria": "🗂️ Qué pasa en una categoría (sin Olé)",
+        "palabra": "🔎 Un tema por palabra clave",
+        "ole": "📊 Informes de Olé (agenda, competencia, pases)",
+        "ranking": "✍️ Nota de un tema del ranking",
+    }
+    camino = st.radio("¿Qué querés armar?", list(_CAMINOS), format_func=lambda k: _CAMINOS[k], key="pia_camino")
     st.divider()
-    st.markdown("#### ✍️ Notas")
-    st.caption("Elegí un tema, marcá las notas y tocá **📋 Pedido para ChatGPT/Claude**: se lee el texto de cada nota "
-               "y se arma el pedido para escribir una nota de Olé con control de datos. "
-               "Lo mismo está en el botón **✍️ Nota** de la Agenda y de Tendencias, y en la Canasta.")
-    if not tendencias:
-        st.info("Todavía no hay temas: actualizá las fuentes.")
+
+    if camino == "temas30":
+        st.markdown("#### 🏆 Los temas principales del deporte")
+        st.caption("Junta TODOS los titulares nacionales e internacionales, medio por medio, y le pide a la IA que los "
+                   "agrupe en los temas principales: qué pasa en el deporte, sin importar qué medio lo publica.")
+        c30a, c30b = st.columns(2)
+        alc30 = c30a.radio("Medios", list(para_ia.ALCANCES), format_func=lambda k: para_ia.ALCANCES[k],
+                           key="pia_30_alc", horizontal=True)
+        cant30 = c30b.select_slider("Cantidad de temas", [10, 15, 20, 30, 40], value=30, key="pia_30_cant")
+        con_ole30 = st.checkbox("Incluir a Olé como un medio más", value=True, key="pia_30_ole")
+        if st.button(f"📋 Armar el pedido de los {cant30} temas", type="primary", key="pia_btn_30"):
+            st.session_state["pia_30_txt"] = para_ia.pedido_30_temas(resultados, alc30, con_ole30, cant30)
+        if st.session_state.get("pia_30_txt"):
+            mostrar_pedido(st.session_state["pia_30_txt"], "pia_30_out", "temas_del_deporte")
+
+    elif camino == "categoria":
+        st.markdown("#### 🗂️ Todo lo que pasa en una categoría")
+        st.caption("Como el informe de los panoramas: lo que publican todos los medios, ordenado por historia, "
+                   "sin comparar con Olé.")
+        cats = para_ia.categorias()
+        cat = st.selectbox("Categoría", list(cats), format_func=lambda k: cats[k], key="pia_cat")
+        palabras_cat = ""
+        if cat == "palabras":
+            palabras_cat = st.text_input("Palabras (separadas por coma)", key="pia_cat_pal",
+                                         placeholder="Ej: river, gallardo, monumental")
+        con_ole = st.checkbox("Sumar a Olé como un medio más", value=False, key="pia_cat_ole")
+        rec = para_ia.recorte_categoria(resultados, cat, palabras_cat, con_ole)
+        st.caption(f"{sum(len(v) for v in rec.values())} titulares de {len(rec)} medios en esta categoría.")
+        if st.button("📋 Armar el informe de la categoría", type="primary", key="pia_btn_cat",
+                     disabled=(cat == "palabras" and not palabras_cat.strip()) or not rec):
+            st.session_state["pia_cat_txt"] = para_ia.pedido_categoria(resultados, cat, palabras_cat, con_ole)
+        if st.session_state.get("pia_cat_txt"):
+            mostrar_pedido(st.session_state["pia_cat_txt"], "pia_cat_out", f"informe_{cat}")
+
+    elif camino == "palabra":
+        st.markdown("#### 🔎 Un tema por palabra clave")
+        st.caption("Buscá una o varias palabras (separadas por coma), marcá las notas que quieras y elegí: "
+                   "**📋 Informe del tema** (todo lo que se sabe, para preguntarle a la IA) o "
+                   "**📋 Pedido para ChatGPT/Claude** (para que escriba la nota).")
+        q_pal = st.text_input("Palabra clave", key="pia_pal", placeholder="Ej: Paredes, Gallardo, Selección Sub-20…")
+        if q_pal.strip():
+            kws = [_norm_texto(k.strip()) for k in q_pal.split(",") if k.strip()]
+            vistos_pal, pool_pal = set(), []
+            for f in TODAS_FUENTES:
+                for n in resultados.get(f["id"], []):
+                    if any(k in _norm_texto(n.get("titulo", "")) for k in kws):
+                        kk = (f["id"], n["titulo"])
+                        if kk not in vistos_pal:
+                            vistos_pal.add(kk); pool_pal.append({"fuente": f, "noticia": n})
+            if not pool_pal:
+                st.warning(f"No hay notas que digan “{q_pal.strip()}” en los medios cargados. Probá con otra palabra.")
+            else:
+                st.caption(f"{len(pool_pal)} notas de {len({x['fuente']['id'] for x in pool_pal})} medios.")
+                with st.container(border=True):
+                    panel_nota_tema(q_pal.strip(), pool_pal[:60], f"pal_{hash(q_pal.strip().lower())}")
+
+    elif camino == "ole":
+        st.markdown("#### 📊 Informes de Olé")
+        tipo_inf = st.radio("Tipo de informe", list(para_ia.TIPOS_INFORME), key="pia_tipo",
+                            format_func=lambda k: para_ia.TIPOS_INFORME[k][0], horizontal=True)
+        st.caption(para_ia.TIPOS_INFORME[tipo_inf][1])
+        alc_inf = "todo"
+        if tipo_inf not in ("libre", "exterior"):
+            alc_inf = st.radio("Medios", list(para_ia.ALCANCES), key="pia_alc",
+                               format_func=lambda k: para_ia.ALCANCES[k], horizontal=True)
+        if st.button("📋 Armar el informe", type="primary", key="pia_btn_inf"):
+            st.session_state["pia_informe"] = para_ia.pedido_informe(resultados, tendencias, ole_analisis, tipo_inf, alc_inf)
+            st.session_state["pia_informe_tipo"] = tipo_inf
+        if st.session_state.get("pia_informe"):
+            mostrar_pedido(st.session_state["pia_informe"], "pia_inf_out", f"informe_{st.session_state.get('pia_informe_tipo', 'ia')}")
+
     else:
-        opciones_pia = list(range(min(len(tendencias), 40)))
-        idx_pia = st.selectbox("Tema", opciones_pia, key="pia_tema",
-                               format_func=lambda i: f"[{tendencias[i]['cant_medios']} medios{' · sin Olé' if not tendencias[i]['tiene_ole'] else ''}] {tendencias[i]['titulo'][:95]}")
-        with st.container(border=True):
-            panel_nota_tema(tendencias[idx_pia]["titulo"], tendencias[idx_pia]["noticias"], f"pia_{hash(tendencias[idx_pia]['titulo'])}")
+        st.markdown("#### ✍️ Nota de un tema del ranking")
+        st.caption("Elegí un tema, marcá las notas y tocá **📋 Pedido para ChatGPT/Claude**. "
+                   "Lo mismo está en el botón **✍️ Nota** de la Agenda y de Tendencias, y en la Canasta.")
+        if not tendencias:
+            st.info("Todavía no hay temas: actualizá las fuentes.")
+        else:
+            opciones_pia = list(range(min(len(tendencias), 40)))
+            idx_pia = st.selectbox("Tema", opciones_pia, key="pia_tema",
+                                   format_func=lambda i: f"[{tendencias[i]['cant_medios']} medios{' · sin Olé' if not tendencias[i]['tiene_ole'] else ''}] {tendencias[i]['titulo'][:95]}")
+            with st.container(border=True):
+                panel_nota_tema(tendencias[idx_pia]["titulo"], tendencias[idx_pia]["noticias"], f"pia_{hash(tendencias[idx_pia]['titulo'])}")
 
 
 # ─── TAB CANASTA ─────────────────────────────────────────────────────────────
@@ -2159,7 +2229,7 @@ with tab_canasta:
                 with st.spinner("🔍 Leyendo las notas que faltan…"):
                     enr_c = _cuerpos([c for c in items_c if not c["cuerpo"]], max_notas=8)
                 enr_c = [{**c, "ok": True} for c in items_c if c["cuerpo"]] + enr_c
-                st.session_state["canasta_pedido"] = prompt_nota_rapida(
+                st.session_state["canasta_pedido"] = para_ia.pedido_nota_chat(
                     tema_canasta.strip() or canasta[0]["noticia"]["titulo"], enr_c,
                     estilo_canasta, tipo_canasta, contexto_canasta.strip())
         with col_gen_c1:
