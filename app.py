@@ -96,7 +96,9 @@ import sheets_memoria
 # Control de versiones: si en el repo quedó algún archivo viejo, se avisa claro en vez de romperse
 import monitor_core as _mc
 _faltan = []
-if not hasattr(_mc, "ENTREGABLES_NOTA"):
+import re as _re
+_v = _re.search(r"v(\d+)", getattr(_mc, "CORE_VERSION", "") or "")
+if not hasattr(_mc, "ENTREGABLES_NOTA") or not _v or int(_v.group(1)) < 30:
     _faltan.append("monitor_core.py (está la versión vieja)")
 try:
     import ia_motores
@@ -104,7 +106,7 @@ except ImportError:
     _faltan.append("ia_motores.py (no está en el repo)")
 try:
     import para_ia
-    if not hasattr(para_ia, "pedido_30_temas"):
+    if not (hasattr(para_ia, "pedido_30_temas") and hasattr(para_ia, "pedido_nota_chat")):
         _faltan.append("para_ia.py (está la versión vieja)")
 except ImportError:
     _faltan.append("para_ia.py (no está en el repo)")
