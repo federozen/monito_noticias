@@ -92,11 +92,11 @@ def recolectar() -> list:
 
 
 def resumen_ia(items: list) -> str:
+    import ia_motores
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key or not items:
+    if not ia_motores.hay_motor(api_key) or not items:
         return ""
     try:
-        import anthropic
         listado = "\n".join(f"[{i['grupo']}] ({i['fuente']}) {i['titulo']}"
                             for i in items)
         prompt = f"""Sos el asistente de un editor deportivo argentino que acaba de ser
@@ -116,13 +116,8 @@ un medio, una herramienta nueva, un dato citable), marcalo con 💬.
 
 TÍTULOS DE LA SEMANA:
 {listado}"""
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001", max_tokens=1500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return "\n".join(b.text for b in msg.content
-                         if getattr(b, "type", None) == "text").strip()
+        # Gratuitos primero (modelo rápido) y Claude Haiku de respaldo
+        return ia_motores.generar(prompt, max_tokens=1500, nivel="rapido", anthropic_key=api_key)
     except Exception as e:
         print(f"  resumen IA falló ({str(e)[:60]}) — va la lista cruda")
         return ""

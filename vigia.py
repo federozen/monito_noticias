@@ -297,9 +297,10 @@ def _parte_inteligente(resultados: dict):
     por día cada uno, después de las 10am. Usa el modelo económico para bajar el
     costo. La API key va en el secreto ANTHROPIC_API_KEY de GitHub."""
     from datetime import datetime
+    import ia_motores
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        return  # sin key configurada, no hace nada (silencioso)
+    if not ia_motores.hay_motor(api_key):
+        return  # sin ninguna clave de IA configurada, no hace nada (silencioso)
 
     ahora = datetime.now(mem._TZ_AR)
     hoy = ahora.strftime("%Y-%m-%d")

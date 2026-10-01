@@ -1371,7 +1371,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v25 · fix historial"
+CORE_VERSION = "núcleo v28 · actualizar todo / nacionales / internacionales"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
@@ -2162,20 +2162,13 @@ MODELO_ECONOMICO = "claude-haiku-4-5-20251001"  # para partes/resúmenes: mucho 
 
 def call_claude(prompt: str, api_key: str, max_tokens: int = 2000,
                 modelo: str = None) -> str:
-    if not api_key:
-        raise RuntimeError("Falta la API key de Anthropic.")
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model=modelo or MODELO_ANALISIS,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except Exception as e:
-        raise RuntimeError(f"Error al llamar a Claude: {e}") from e
-    # Concatenar todos los bloques de texto (no asumir que content[0] es texto)
-    partes = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-    return "\n".join(partes).strip()
+    """Un pedido a la IA. Se sigue llamando call_claude para no tocar el resto del código,
+    pero ahora prueba los motores gratuitos primero (Gemini, Mistral, Groq, OpenRouter)
+    y usa Claude de respaldo. Ver ia_motores.py."""
+    import ia_motores
+    nivel = "rapido" if modelo == MODELO_ECONOMICO else "modelo"
+    return ia_motores.generar(prompt, max_tokens=max_tokens, nivel=nivel, anthropic_key=api_key or "",
+                              modelo_claude=modelo or MODELO_ANALISIS)
 
 PERLITA_KEYWORDS = [
     "insolito", "insólito", "viral", "furor", "locura", "increible", "increíble",
@@ -2694,9 +2687,10 @@ TOP 10 TEMAS:
 FALTANTES EN OLÉ:
 {bloque_falt}"""
 
-def _extraer_cuerpo_nota(url: str, max_chars: int = 900) -> str:
+def _extraer_cuerpo_nota(url: str, max_chars: int = 2500) -> str:
     """Intenta extraer los primeros párrafos del cuerpo de una nota. Retorna '' si falla.
-    Limitado a 900 chars por nota para controlar el gasto de tokens de entrada."""
+    Limitado a 2500 caracteres por nota (unos 10 párrafos): alcanza para escribir bien
+    sin gastar de más. Con los motores gratuitos el costo no importa; con Claude son centavos."""
     if not url or not url.startswith("http"):
         return ""
     try:
@@ -2722,13 +2716,13 @@ def _extraer_cuerpo_nota(url: str, max_chars: int = 900) -> str:
             el = soup.select_one(sel)
             if el:
                 parrafos = [p.get_text(" ", strip=True) for p in el.find_all("p") if len(p.get_text(strip=True)) > 40]
-                texto = "\n".join(parrafos[:5])  # máx 5 párrafos por nota
+                texto = "\n".join(parrafos[:14])  # hasta 14 párrafos por nota
                 if len(texto) > 200:
                     break
         if not texto:
             # Último recurso: todos los <p> largos de la página
             parrafos = [p.get_text(" ", strip=True) for p in soup.find_all("p") if len(p.get_text(strip=True)) > 60]
-            texto = "\n".join(parrafos[:4])
+            texto = "\n".join(parrafos[:10])
         return texto[:max_chars].strip()
     except Exception:
         return ""
@@ -2765,180 +2759,159 @@ def scrape_cuerpos_notas(titulares: list, max_notas: int = 6) -> list:
 
     return enriquecidos
 
-def prompt_nota_rapida(tema: str, titulares_enriquecidos: list, estilo: str, tipo_nota: str, contexto_extra: str = "") -> str:
-    con_cuerpo  = [t for t in titulares_enriquecidos if t.get("ok")]
+ENTREGABLES_NOTA = ["Nota completa", "Nota breve", "Solo titulares alternativos", "Esqueleto + ángulos"]
+ESTILOS_NOTA = ["Informativa", "Analítica", "Urgente/Flash"]
+
+
+def _fecha_ar() -> str:
+    try:
+        from zoneinfo import ZoneInfo
+        ahora = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+    except Exception:
+        ahora = datetime.now()
+    dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    return f"{dias[ahora.weekday()]} {ahora.strftime('%d/%m/%Y, %H:%M')}"
+
+
+def prompt_nota_rapida(tema: str, titulares_enriquecidos: list, estilo: str, tipo_nota: str,
+                       contexto_extra: str = "") -> str:
+    """El pedido para escribir una nota a partir de una o varias notas de otros medios.
+    Método: inventario de datos con su fuente → lo que no sabemos → ángulo → nota con
+    palabras propias → control de cada afirmación contra el inventario.
+    Las secciones van con encabezados ═══ NOMBRE ═══ porque la app las separa en pestañas."""
+    con_cuerpo = [t for t in titulares_enriquecidos if t.get("ok")]
     solo_titulo = [t for t in titulares_enriquecidos if not t.get("ok")]
-    tiene_info_real = len(con_cuerpo) > 0
+    medios = sorted({t["fuente"]["nombre"] for t in titulares_enriquecidos})
 
-    # Bloque de fuentes con cuerpo completo
-    bloque_completo = ""
-    if con_cuerpo:
-        partes = []
-        for t in con_cuerpo:
-            f, n = t["fuente"], t["noticia"]
-            partes.append(
-                f"── [{f['nombre']}] {n['titulo']}\n"
-                f"URL: {n.get('url','')}\n"
-                f"TEXTO:\n{t['cuerpo']}"
-            )
-        bloque_completo = "\n\n".join(partes)
-
-    # Bloque de fuentes solo con titular
-    bloque_titulares = ""
-    if solo_titulo:
-        bloque_titulares = "\n".join(
-            f"  • [{t['fuente']['nombre']}] {t['noticia']['titulo']}"
-            for t in solo_titulo
-        )
+    bloque_completo = "\n\n".join(
+        f"── [{k}] {t['fuente']['nombre']} — {t['noticia']['titulo']}\n"
+        f"Link: {t['noticia'].get('url') or '(sin link)'}\n"
+        f"TEXTO:\n{t['cuerpo']}"
+        for k, t in enumerate(con_cuerpo, 1))
+    bloque_titulares = "\n".join(f"  • [{t['fuente']['nombre']}] {t['noticia']['titulo']}" for t in solo_titulo)
 
     estilos = {
-        "Informativa": (
-            "Estilo agencia de noticias argentina (Télam/NA). "
-            "Tono directo, neutro, sin opinión ni adjetivos innecesarios. "
-            "Verbos en pasado o presente simple. Oraciones cortas. "
-            "Los datos concretos van primero, el contexto después."
-        ),
-        "Analítica": (
-            "Estilo agencia argentina con profundidad. "
-            "Tono directo y neutro pero con contexto, antecedentes y proyección. "
-            "Cada afirmación tiene respaldo en las fuentes. "
-            "Párrafos más largos, estructura de causa-efecto."
-        ),
-        "Urgente/Flash": (
-            "Estilo despacho urgente de agencia argentina. "
-            "Máximo 3 párrafos muy cortos. Verbo en presente. "
-            "Solo el dato central, sin contexto. "
-            "Primera oración = toda la noticia en una línea."
-        ),
+        "Informativa": "Informativa, con el tono de Olé: futbolera, ágil y directa, sin opinión. Lo más fuerte y nuevo arriba; "
+                       "después los detalles, las declaraciones y lo que viene.",
+        "Analítica": "Analítica: además de qué pasó, por qué importa, qué cambia y qué viene, siempre con lo que dice el material. "
+                     "Estructura de causa y consecuencia; nada de opinión propia.",
+        "Urgente/Flash": "Urgente: despacho corto. Primera oración = toda la noticia. Verbo en presente. Solo el dato central "
+                         "y lo imprescindible para entenderlo.",
     }
-    tipos = {
-        "Nota completa": (
-            "Nota con subtítulos (SIN lead/cierre clásico de manual). Estructura:\n"
-            "- Primer párrafo suelto: el hecho central en 2-3 oraciones directas, sin subtítulo.\n"
-            "- Luego 3 o 4 secciones, cada una con subtítulo informativo en negrita (## Subtítulo), "
-            "seguido de 2-3 párrafos de 60-80 palabras.\n"
-            "- La nota entera: entre 400 y 550 palabras.\n"
-            "- Los subtítulos deben ser concretos y periodísticos, no genéricos "
-            "(ej: '## La lesión y los plazos de recuperación' en vez de '## Contexto')."
-        ),
-        "Solo titulares alternativos": (
-            "Generá 8 titulares alternativos: 2 impactantes, 2 SEO, "
-            "2 para redes sociales (con gancho), 2 estilo agencia neutro. "
-            "Para cada uno agregá una línea corta explicando el enfoque."
-        ),
-        "Esqueleto + ángulos": (
-            "Esqueleto con subtítulos numerados (## 1. ..., ## 2. ...) "
-            "y una línea describiendo qué información va en cada sección. "
-            "Al final, 3 ángulos posibles con título sugerido para cada uno."
-        ),
+    extension = {
+        "Nota completa": "Entre 400 y 600 palabras. Un primer párrafo suelto con el hecho central y el ángulo (sin intertítulo), "
+                         "después 2 o 3 intertítulos concretos y periodísticos (\"## La lesión y los plazos\", nunca \"## Contexto\").",
+        "Nota breve": "Entre 150 y 250 palabras, en 3 o 4 párrafos, sin intertítulos.",
     }
+    if estilo == "Urgente/Flash":
+        extension = {k: "Hasta 120 palabras, en 2 o 3 párrafos muy cortos, sin intertítulos." for k in extension}
 
-    instruccion_angulo = f"""ANTES DE ESCRIBIR — el método (obligatorio, no lo saltees):
-Identificá en silencio los 6 niveles de lectura del hecho: qué pasó, qué cambió,
-a quién afecta, qué emoción genera, qué tendencia o patrón revela y qué
-consecuencia deja. Después elegí UN ángulo del framework de Olé (cambio de
-estatus, patrón, consecuencia, héroe inesperado, conflicto, paradoja, identidad,
-tendencia, qué significa, el día después) y construí TODA la nota alrededor de
-ese ángulo: el título compite por el significado, no por la información; el
-primer párrafo instala el ángulo, no la crónica.{bloque_criterios()}
+    reglas_redaccion = f"""REGLAS DE REDACCIÓN
+- La nota es de Olé: NO nombres a los medios de donde sale la información. Los nombres de medios y periodistas del material son solo para tu control.
+- Lo CONFIRMADO (oficial, declaración pública o lo dicen varios medios) va como hecho. Lo ATRIBUIDO (lo publica un solo medio, o es un trascendido) nunca va como hecho: usá "trascendió que", "en el club aseguran", "habría", "estaría", sin nombrar al medio. Nunca escribas "pudo saber Olé" ni presentes nada como averiguación propia.
+- Si los medios dicen cosas distintas sobre un dato, contá las versiones (sin decir quién publicó cada una) y anotalo en PARA COMPLETAR.
+- Las citas entre comillas tienen que estar textuales en el material y se atribuyen a quien las dijo ("dijo Gallardo en conferencia"), nunca al medio. Si salen de una entrevista con otro medio, poné "en una entrevista". Si estaban en otro idioma, traducilas y marcalas como traducción en la VERIFICACIÓN.
+- Escribí con tus propias palabras: no copies oraciones ni párrafos de las notas del material.
+- Español rioplatense. Clubes como los nombra la prensa argentina: River, Boca, Racing, San Lorenzo, Independiente, Huracán, Vélez, Lanús. "La Selección" (no "la Albiceleste"), "la Sub-20". Jugadores por apellido desde la segunda mención, sin apodos. Cargos en minúscula ("el entrenador Scaloni").
+- Prohibido: "en este contexto", "cabe destacar", "vale la pena mencionar", "a su vez", "en tanto", y adjetivos que valoren lo que el material no valora ("histórico", "increíble", "brillante").
+- Párrafos cortos (hasta 60 palabras). Nada de relleno ni de frases hechas.
+- El título no puede prometer nada que el cuerpo no sostenga.{bloque_criterios()}"""
 
-"""
+    regla_oro = """LA REGLA MÁS IMPORTANTE: no agregues NADA que no esté en el material. Ni datos, ni cifras, ni fechas, ni edades, ni estadísticas, ni resultados, ni antecedentes, ni declaraciones, ni nombres, aunque creas saberlos: tu memoria puede estar desactualizada y un dato falso publicado es un error grave. Si para que la nota quede completa hace falta un dato que no está, escribí [DATO A CONFIRMAR: qué falta] en ese lugar y seguí."""
 
-    if tiene_info_real:
-        instruccion_alucinacion = instruccion_angulo + """⚠️ REGLAS ANTI-ALUCINACIÓN (CRÍTICAS — leelas antes de escribir una sola palabra):
-- Usá ÚNICAMENTE datos, cifras, citas y hechos que aparezcan textualmente en las FUENTES de abajo.
-- Prohibido agregar contexto histórico, estadísticas o antecedentes que no estén en los textos.
-- Las citas entre comillas SOLO pueden ser frases que aparezcan literalmente en los textos fuente.
-- Si un dato no está en los textos, escribí [DATO A CONFIRMAR] en su lugar. Sin excepciones.
-- Si dos fuentes se contradicen, mencioná la contradicción explícitamente."""
+    metodo = f"""CÓMO TRABAJAR
+1. Leé todo el material y armá el INVENTARIO: cada dato utilizable, numerado, con el medio que lo publica y si es CONFIRMADO o ATRIBUIDO.
+2. Pensá qué NO sabemos (lo que la nota no puede afirmar).
+3. Elegí UN ángulo y construí todo alrededor de él: el título compite por el significado, no por la información; el primer párrafo instala el ángulo, no la crónica. Usá el ángulo argentino (un club, un jugador argentino, la Selección) solo si está en el material.
+{FRAMEWORK_ANGULOS}
+4. Escribí.
+5. Controlá la nota oración por oración contra el INVENTARIO: lo que no tenga respaldo, sacalo o reemplazalo por [DATO A CONFIRMAR: …]."""
 
-        instruccion_formato = """
-FORMATO DE RESPUESTA OBLIGATORIO — respetá este orden exacto:
+    fmt_seccion = lambda nombre: f"═══ {nombre} ═══"
+    if tipo_nota == "Solo titulares alternativos" and con_cuerpo:
+        entregable = "titulares alternativos para esta historia"
+        formato = f"""FORMATO DE RESPUESTA (respetá exactamente estos encabezados, cada uno en su propia línea):
 
-════════════════════════════════════
-NOTA
-════════════════════════════════════
-[Aquí va la nota redactada según el estilo y entregable solicitado]
+{fmt_seccion("INVENTARIO")}
+Los datos clave, numerados y compactos: [D1] dato — medio — CONFIRMADO/ATRIBUIDO.
 
+{fmt_seccion("TITULARES")}
+8 titulares: 2 de impacto (estilo Olé), 2 SEO (con el nombre propio al principio), 2 para redes (con gancho), 2 informativos neutros. Debajo de cada uno, una línea con el enfoque y el dato del inventario que lo sostiene ([D3]). Ninguno puede afirmar algo ATRIBUIDO como hecho.
 
-════════════════════════════════════
-TABLA DE VERIFICACIÓN
-════════════════════════════════════
-Lista TODOS los datos concretos que usaste en la nota (cifras, nombres, citas, hechos).
-Para cada uno indicá:
-• DATO: el dato exacto como aparece en la nota
-• FUENTE: nombre del medio de donde lo tomaste
-• VERIFICADO: ✅ si está textualmente en el cuerpo scrapeado | ⚠️ si solo aparece en el titular | ❌ si no encontrás respaldo
+{fmt_seccion("ÁNGULOS ALTERNATIVOS")}
+3 ángulos distintos del framework (nombrá el tipo), con un título sugerido para cada uno."""
+    elif tipo_nota == "Esqueleto + ángulos" or not con_cuerpo:
+        entregable = "el esqueleto de la nota, listo para completar" if con_cuerpo else \
+            "el esqueleto de la nota (no se pudo leer el texto de ninguna nota: solo hay títulos, así que NO redactes la nota)"
+        formato = f"""FORMATO DE RESPUESTA (respetá exactamente estos encabezados, cada uno en su propia línea):
 
-Ejemplo de fila:
-• DATO: "sufrió un desgarro en el isquiotibial derecho" | FUENTE: TyC Sports | VERIFICADO: ✅
+{fmt_seccion("INVENTARIO")}
+Lo que el material permite afirmar, numerado: [D1] dato — medio — CONFIRMADO/ATRIBUIDO. {"" if con_cuerpo else "Con solo títulos, casi todo es ATRIBUIDO: no infieras nada que el título no diga."}
 
-════════════════════════════════════
-ÁNGULOS ALTERNATIVOS
-════════════════════════════════════
-3 enfoques distintos del framework (nombrá el tipo de ángulo), con título sugerido para cada uno.
-"""
+{fmt_seccion("NOTA")}
+Título sugerido, bajada sugerida y la estructura: secciones con intertítulo concreto (## …) y, debajo de cada una, qué información va y con qué dato del inventario ([D2]); donde falta información, [DATO A CONFIRMAR: …].
 
-        bloque_fuentes = f"""=== FUENTES CON TEXTO COMPLETO ({len(con_cuerpo)}) — de estas podés extraer datos ===
-{bloque_completo}"""
-        if bloque_titulares:
-            bloque_fuentes += f"""
+{fmt_seccion("PARA COMPLETAR")}
+Las preguntas concretas que hay que responder antes de publicar, de la más importante a la menos.
 
-=== FUENTES SOLO CON TITULAR ({len(solo_titulo)}) — NO inferir datos, solo confirmar que el tema existe ===
-{bloque_titulares}"""
+{fmt_seccion("ÁNGULOS ALTERNATIVOS")}
+3 ángulos distintos del framework (nombrá el tipo), con un título sugerido para cada uno."""
     else:
-        instruccion_alucinacion = instruccion_angulo + """⚠️ MODO ESQUELETO SEGURO — no se pudo leer el cuerpo de ninguna nota.
-No redactes la nota. En cambio, seguí el formato de respuesta obligatorio de abajo."""
+        entregable = "una nota lista para publicar en Olé"
+        formato = f"""FORMATO DE RESPUESTA (respetá exactamente estos encabezados, cada uno en su propia línea, en este orden):
 
-        instruccion_formato = """
-FORMATO DE RESPUESTA OBLIGATORIO:
+{fmt_seccion("INVENTARIO")}
+Compacto, una línea por dato: [D1] dato — medio — CONFIRMADO/ATRIBUIDO. Las declaraciones textuales, tal cual y con quién las dijo.
 
-════════════════════════════════════
-ESQUELETO DE NOTA
-════════════════════════════════════
-Estructura con secciones numeradas y vacías, listas para que el redactor complete.
-Indicá qué tipo de información va en cada sección.
+{fmt_seccion("NOTA")}
+La versión final, lista para copiar y pegar:
+Primera línea: el título (corto, directo, con fuerza, estilo Olé).
+Segunda línea: la bajada (una o dos oraciones con el dato principal).
+Después, el cuerpo: {extension.get(tipo_nota, extension["Nota completa"])}
+Sin referencias [D…] ni comentarios tuyos dentro de la nota.
 
-════════════════════════════════════
-DATOS CONFIRMADOS (solo desde titulares)
-════════════════════════════════════
-Lista con bullet points. Solo lo que los titulares permiten afirmar con certeza.
-Formato: • [dato] — confirmado por: [medio]
+{fmt_seccion("TÍTULOS ALTERNATIVOS")}
+3 títulos más para la misma nota, con distinto enfoque.
 
-════════════════════════════════════
-DATOS A CONFIRMAR ANTES DE PUBLICAR
-════════════════════════════════════
-Lista de preguntas concretas que el redactor debe responder antes de publicar.
+{fmt_seccion("VERIFICACIÓN")}
+Una línea por cada dato concreto de la nota (cifras, nombres, citas, hechos):
+• DATO: "como aparece en la nota" | FUENTE: medio [D#] | ✅ está en el texto de una nota · ⚠️ solo en un título o es ATRIBUIDO · ❌ sin respaldo (en ese caso, corregí la nota antes de entregarla).
 
-════════════════════════════════════
-ÁNGULOS ALTERNATIVOS
-════════════════════════════════════
-3 enfoques distintos según qué datos aparezcan, con título sugerido para cada uno.
-"""
-        bloque_fuentes = f"""=== SOLO TITULARES DISPONIBLES ({len(solo_titulo)}) ===
-{bloque_titulares}"""
+{fmt_seccion("PARA COMPLETAR")}
+Todos los [DATO A CONFIRMAR] que quedaron, las contradicciones entre medios y lo que conviene chequear antes de publicar. Si no hay nada, escribí "Nada pendiente".
 
-    return f"""Sos un redactor deportivo de un portal argentino. Tu tarea es trabajar sobre este tema:
+{fmt_seccion("ÁNGULOS ALTERNATIVOS")}
+2 ángulos distintos del framework (nombrá el tipo), con un título sugerido para cada uno."""
 
+    material = ""
+    if con_cuerpo:
+        material += f"=== NOTAS CON TEXTO ({len(con_cuerpo)}) — de acá salen los datos ===\n{bloque_completo}"
+    if bloque_titulares:
+        material += (f"\n\n=== SOLO TÍTULOS ({len(solo_titulo)}) — sirven para saber qué publicó cada medio; "
+                     f"no infieras datos que el título no dice ===\n{bloque_titulares}")
+
+    extra = ""
+    if contexto_extra:
+        extra = ("\n\n=== CONTEXTO DEL REDACTOR ===\n" + contexto_extra +
+                 "\n(Esto lo aporta el redactor de Olé: podés usarlo como dato confirmado y como guía del ángulo. "
+                 "En la VERIFICACIÓN, su fuente es \"Redactor\".)")
+
+    return f"""Sos redactor de Olé, el diario deportivo argentino. Tenés que escribir {entregable}, para lectores argentinos, usando ÚNICAMENTE el material de abajo: lo que publicaron {len(medios)} medio(s) sobre esta historia.
+
+Hoy es {_fecha_ar()} (hora argentina): tenelo en cuenta para "hoy", "ayer" y "mañana".
 TEMA: {tema}
 ESTILO: {estilos.get(estilo, estilos["Informativa"])}
-ENTREGABLE: {tipos.get(tipo_nota, tipos["Nota completa"])}
 
-{instruccion_alucinacion}
-{instruccion_formato}
+{regla_oro}
 
-{bloque_fuentes}
+{metodo}
 
-Escribí en español rioplatense con voseo. Tono de agencia de noticias argentina (estilo Télam, NA, DyN).
-Reglas de estilo periodístico argentino:
-- Los clubes se nombran como los nombra la prensa argentina: "River" (no "River Plate"), "Boca" (no "Boca Juniors"), "Racing" (no "Racing Club"), "San Lorenzo" (no "San Lorenzo de Almagro"), "Independiente", "Huracán", "Vélez", "Lanús", "Defensa", etc.
-- Los seleccionados: "la Selección" o "el equipo nacional" (no "la Albiceleste" salvo que sea en un contexto festivo), "la Sub-20", "la Sub-23".
-- Los jugadores se mencionan por apellido a partir de la segunda referencia: "Messi" (no "La Pulga"), "Di María" (no "el Fideo"). Sin apodos en texto de agencia.
-- Cargos y funciones en minúscula: "el entrenador Scaloni", "el presidente Laporta", "el director técnico".
-- Evitá frases como "en este contexto", "cabe destacar", "vale la pena mencionar", "a su vez", "en tanto".
-- No uses adjetivos valorativos ("increíble", "impresionante", "histórico", "brillante") salvo que estén textualmente en la fuente.
-- Nunca uses "lead", "bajada" ni ningún término de manual de redacción en el cuerpo de la nota.
-{("\n=== CONTEXTO ADICIONAL DEL REDACTOR ===\n" + contexto_extra + "\n(Podés usar este contexto libremente en la nota — es información aportada por el redactor, no requiere verificación de fuente.)") if contexto_extra else ""}
+{reglas_redaccion}
+
+{formato}
+
+=== MATERIAL ===
+{material}{extra}
 """
 
 

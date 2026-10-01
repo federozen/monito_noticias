@@ -86,10 +86,12 @@ def main():
     if not mem.disponible():
         print("Sin planilla configurada. Abortando.")
         sys.exit(1)
+    import ia_motores
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("Falta ANTHROPIC_API_KEY. Abortando.")
+    if not ia_motores.hay_motor(api_key):
+        print("Falta una clave de IA (GEMINI_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY o ANTHROPIC_API_KEY). Abortando.")
         sys.exit(1)
+    print(f"   motores de IA: {ia_motores.descripcion_cadena(api_key)}")
 
     cfg = mem.leer_config()
     monitor_core.CRITERIOS_EDITOR = cfg.get("criterios", "")
@@ -118,9 +120,9 @@ def main():
         return
 
     fecha = fecha_es(datetime.now(_TZ_AR))
-    print("3) Escribiendo el parte con Claude...")
+    print("3) Escribiendo el parte con IA...")
     parte = call_claude(prompt_parte(agenda, fecha), api_key, max_tokens=4000)
-    print(f"   {len(parte)} caracteres")
+    print(f"   {len(parte)} caracteres · lo escribió {ia_motores.ULTIMO.get('nombre')}")
 
     mem.guardar_informe(parte, f"parte matutino {fecha}")
     print(f"4) Guardado en la planilla → {mem.url_planilla()}")

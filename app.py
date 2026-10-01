@@ -93,6 +93,9 @@ from monitor_core import prompt_sentimiento_argentina, exportar_recorte_argentin
 from monitor_core import entrenar_semaforo, predecir_semaforo  # noqa: F401
 from monitor_core import fetch_trends_ar  # noqa: F401
 import sheets_memoria
+import ia_motores
+import para_ia
+from monitor_core import ENTREGABLES_NOTA, ESTILOS_NOTA  # noqa: F401
 
 if "resultados" not in st.session_state:
     st.session_state.resultados = {}
@@ -147,7 +150,7 @@ def _canasta_agregar(titulo: str, url: str, fuente: dict, scrape_cuerpo: bool = 
     cuerpo = ""
     if scrape_cuerpo and url:
         try:
-            cuerpo = _extraer_cuerpo_nota(url, max_chars=1800)
+            cuerpo = _extraer_cuerpo_nota(url, max_chars=2500)
         except Exception:
             cuerpo = ""
     st.session_state.canasta.append({
@@ -155,6 +158,207 @@ def _canasta_agregar(titulo: str, url: str, fuente: dict, scrape_cuerpo: bool = 
         "noticia": {"titulo": titulo, "url": url},
         "cuerpo": cuerpo,
     })
+
+# ─── NOTA CON IA: lectura de notas, resultado y panel para temas calientes ───
+def _cuerpos(items: list, max_notas: int = 6) -> list:
+    """Lee el texto de las notas elegidas (en paralelo) y lo guarda por un rato:
+    si volvés a generar con las mismas notas, no se vuelven a bajar."""
+    cache = st.session_state.setdefault("_cuerpos_cache", {})
+    con_url = [it for it in items if it["noticia"].get("url")][:max_notas]
+    falta = [it["noticia"]["url"] for it in con_url if it["noticia"]["url"] not in cache]
+    if falta:
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            for url, cuerpo in zip(falta, ex.map(lambda u: _extraer_cuerpo_nota(u, max_chars=2500), falta)):
+                cache[url] = cuerpo or ""
+    out = []
+    for it in items:
+        u = it["noticia"].get("url")
+        cuerpo = cache.get(u, "") if it in con_url else (it.get("cuerpo") or "")
+        out.append({**it, "cuerpo": cuerpo, "ok": bool(cuerpo)})
+    return out
+
+
+def _secciones_nota(raw: str) -> dict:
+    """Separa la respuesta de la IA en secciones por sus encabezados (═══ NOMBRE ═══)."""
+    patron = re.compile(r"^[#*\s]*[═=]{3,}[*\s]*([^═=\n*#]{2,60}?)[*\s]*[═=]{3,}[*\s]*$|^[#*\s]*[═=]{8,}\s*\n[#*\s]*([^═=\n*#]{2,60}?)[*\s]*\n\s*[═=]{8,}\s*$", re.M)
+    marcas = list(patron.finditer(raw))
+    out = {}
+    for i, m in enumerate(marcas):
+        nombre = (m.group(1) or m.group(2) or "").strip().upper()
+        fin = marcas[i + 1].start() if i + 1 < len(marcas) else len(raw)
+        out[nombre] = raw[m.end():fin].strip()
+    return out
+
+
+def _sec(secs: dict, *nombres) -> str:
+    for n in nombres:
+        for k, v in secs.items():
+            if k.startswith(n):
+                return v
+    return ""
+
+
+def mostrar_nota_ia(raw: str, key: str, cant_con_texto: int = None):
+    """Muestra la nota generada: la nota lista para copiar y, en pestañas, el control de datos."""
+    secs = _secciones_nota(raw)
+    nota = _sec(secs, "NOTA", "ESQUELETO")
+    titulares = _sec(secs, "TITULARES")
+    verif = _sec(secs, "VERIFICACIÓN", "VERIFICACION", "TABLA DE VERIFICACI")
+    completar = _sec(secs, "PARA COMPLETAR", "DATOS A CONFIRMAR")
+    inventario = _sec(secs, "INVENTARIO", "DATOS CONFIRMADOS")
+    titulos_alt = _sec(secs, "TÍTULOS ALTERNATIVOS", "TITULOS ALTERNATIVOS")
+    angulos = _sec(secs, "ÁNGULOS", "ANGULOS")
+    motor = st.session_state.get(f"{key}_motor", "")
+    pendientes = len(re.findall(r"\[DATO A CONFIRMAR", nota or raw))
+    info = []
+    if motor: info.append(f"✦ Hecho con **{motor}**")
+    if cant_con_texto is not None: info.append(f"con el texto de **{cant_con_texto}** nota(s)")
+    if info: st.caption(" · ".join(info))
+    if pendientes:
+        st.warning(f"⚠️ Quedaron **{pendientes}** dato(s) para confirmar, marcados como [DATO A CONFIRMAR]. Revisá la pestaña *Para completar*.")
+    if not (nota or titulares or verif):
+        st.text_area("Resultado", raw, height=520, key=f"{key}_raw", label_visibility="collapsed")
+    else:
+        pestañas = [("📄 Nota", nota or titulares)]
+        if verif: pestañas.append(("🔍 Verificación", verif))
+        if completar: pestañas.append(("⚠️ Para completar", completar))
+        if inventario: pestañas.append(("🧾 Datos", inventario))
+        if titulos_alt or angulos: pestañas.append(("💡 Títulos y ángulos", "\n\n".join(x for x in [titulos_alt, angulos] if x)))
+        tabs = st.tabs([t for t, _ in pestañas])
+        for (t, contenido), tab in zip(pestañas, tabs):
+            with tab:
+                if t == "📄 Nota":
+                    st.caption("Podés editarla acá antes de copiarla o descargarla.")
+                    editada = st.text_area("Nota", contenido, height=460, key=f"{key}_nota", label_visibility="collapsed")
+                    st.download_button("📥 Descargar la nota (.txt)", editada, use_container_width=True,
+                                       file_name=f"nota_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", mime="text/plain", key=f"{key}_dl")
+                elif t == "🔍 Verificación":
+                    for linea in contenido.split("\n"):
+                        linea = linea.strip()
+                        if not linea: continue
+                        if "✅" in linea:   color, bg, borde = "#166534", "#f0fdf4", "#86efac"
+                        elif "⚠️" in linea or "⚠" in linea: color, bg, borde = "#92400e", "#fffbeb", "#fcd34d"
+                        elif "❌" in linea:  color, bg, borde = "#991b1b", "#fef2f2", "#fca5a5"
+                        else:               color, bg, borde = "#374151", "#f9fafb", "#e5e7eb"
+                        st.markdown(f'<div style="padding:7px 12px;margin-bottom:5px;border-radius:6px;background:{bg};'
+                                    f'border-left:3px solid {borde};color:{color};font-size:14px">{linea}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(contenido)
+    st.download_button("📥 Descargar todo (nota + control)", raw, key=f"{key}_dl_todo",
+                       file_name=f"nota_completa_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", mime="text/plain")
+
+
+def mostrar_pedido(texto: str, key: str, archivo: str = "pedido_para_ia"):
+    """Un pedido listo para llevar a ChatGPT, Claude o Gemini: copiar, descargar y abrir."""
+    palabras = len(texto.split())
+    st.success(f"📋 Pedido listo: unas **{palabras:,}** palabras. Copialo (ícono arriba a la derecha del recuadro) "
+               "o descargalo, y pegalo en la IA que uses. No gasta tu API key.".replace(",", "."))
+    c1, c2, c3, c4 = st.columns(4)
+    c1.download_button("📥 Descargar .txt", texto, file_name=f"{archivo}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                       mime="text/plain", use_container_width=True, key=f"{key}_dl")
+    c2.link_button("Abrir ChatGPT", "https://chatgpt.com/", use_container_width=True)
+    c3.link_button("Abrir Claude", "https://claude.ai/new", use_container_width=True)
+    c4.link_button("Abrir Gemini", "https://gemini.google.com/app", use_container_width=True)
+    if palabras > 9000:
+        st.caption("Es largo: si la IA no lo acepta pegado, subí el .txt como archivo adjunto.")
+    with st.expander("Ver el pedido completo", expanded=False):
+        st.code(texto, language=None)
+
+
+def _elegir_notas(noticias: list, maximo: int = 5) -> list:
+    """Índices sugeridos: una nota por medio, primero los nacionales y Olé al final."""
+    orden = sorted(range(len(noticias)), key=lambda i: (
+        noticias[i]["fuente"]["id"] == "ole", noticias[i]["fuente"]["id"] not in FUENTES_NAC_IDS,
+        not noticias[i]["noticia"].get("url"), i))
+    vistos, out = set(), []
+    for i in orden:
+        fid = noticias[i]["fuente"]["id"]
+        if fid in vistos or not noticias[i]["noticia"].get("url"): continue
+        vistos.add(fid); out.append(i)
+        if len(out) >= maximo: break
+    return sorted(out)
+
+
+def panel_nota_tema(tema: str, noticias: list, key: str):
+    """Tema caliente → elegir varias notas → una nota de Olé. Todo en el mismo lugar."""
+    noticias = list(noticias or [])
+    extra = st.session_state.setdefault(f"{key}_extra", [])
+    pool = noticias + [x for x in extra if x["noticia"]["titulo"] not in {n["noticia"]["titulo"] for n in noticias}]
+    if not pool:
+        st.info("Este tema no tiene notas para usar.")
+        return
+    medios = len({n["fuente"]["id"] for n in pool})
+    st.markdown(f"**✍️ Una nota con lo que publicaron {medios} medio(s)** · elegí las notas (sugerimos una por medio):")
+    etiquetas = [f"{n['fuente']['nombre']} · {n['noticia']['titulo'][:95]}" for n in pool]
+    sel_key = f"{key}_sel"
+    if sel_key not in st.session_state:
+        st.session_state[sel_key] = _elegir_notas(pool)
+    pend = st.session_state.pop(f"{key}_pend", None)      # nota sumada desde la búsqueda
+    if pend is not None and pend not in st.session_state[sel_key] and len(st.session_state[sel_key]) < 8:
+        st.session_state[sel_key] = list(st.session_state[sel_key]) + [pend]
+    c1, c2, c3 = st.columns(3)
+    if c1.button("Sugeridas", key=f"{key}_sug", use_container_width=True):
+        st.session_state[sel_key] = _elegir_notas(pool); st.rerun()
+    if c2.button("Todas", key=f"{key}_all", use_container_width=True):
+        st.session_state[sel_key] = list(range(len(pool)))[:8]; st.rerun()
+    if c3.button("Ninguna", key=f"{key}_none", use_container_width=True):
+        st.session_state[sel_key] = []; st.rerun()
+    elegidas = st.multiselect("Notas", list(range(len(pool))), format_func=lambda i: etiquetas[i],
+                              key=sel_key, label_visibility="collapsed", max_selections=8)
+    with st.expander("➕ Sumar otras notas (de otro título o de otro medio)"):
+        q = st.text_input("Buscar en todos los medios cargados", key=f"{key}_q", placeholder="Ej: Gallardo, lesión, Paredes…")
+        if q.strip():
+            ql = _norm_texto(q.strip())
+            ya = {n["noticia"]["titulo"] for n in pool}
+            hall = [{"fuente": f, "noticia": n} for f in TODAS_FUENTES for n in resultados.get(f["id"], [])
+                    if ql in _norm_texto(n["titulo"]) and n["titulo"] not in ya][:30]
+            if not hall:
+                st.caption("No hay otras notas con esa palabra.")
+            for j, h in enumerate(hall):
+                if st.button(f"➕ {h['fuente']['nombre']} · {h['noticia']['titulo'][:90]}", key=f"{key}_add_{j}_{hash(h['noticia']['titulo'])}"):
+                    extra.append(h)
+                    st.session_state[f"{key}_pend"] = len(pool)
+                    st.rerun()
+    c4, c5 = st.columns(2)
+    estilo = c4.selectbox("Estilo", ESTILOS_NOTA, key=f"{key}_estilo")
+    tipo = c5.selectbox("Qué querés", ENTREGABLES_NOTA, key=f"{key}_tipo")
+    contexto = st.text_area("Lo que sabés vos (opcional)", key=f"{key}_ctx", height=70,
+                            placeholder="Un dato propio, una declaración que tenés, el ángulo que querés…")
+    c6, c8, c7 = st.columns([2, 2, 1])
+    generar = c6.button(f"✦ Escribir con {len(elegidas)} nota(s)", type="primary", use_container_width=True,
+                        disabled=not elegidas, key=f"{key}_gen")
+    if c8.button("📋 Pedido para ChatGPT/Claude", use_container_width=True, disabled=not elegidas, key=f"{key}_ped",
+                 help="Gratis: arma el pedido con el texto de las notas para pegarlo en ChatGPT, Claude o Gemini"):
+        items = [pool[i] for i in elegidas]
+        with st.spinner("🔍 Leyendo las notas…"):
+            enr = _cuerpos(items, max_notas=8)
+        st.session_state[f"{key}_pedido"] = prompt_nota_rapida(tema, enr, estilo, tipo, contexto.strip())
+    if c7.button("🧺 A la canasta", use_container_width=True, disabled=not elegidas, key=f"{key}_can"):
+        for i in elegidas:
+            _canasta_agregar(pool[i]["noticia"]["titulo"], pool[i]["noticia"].get("url"), pool[i]["fuente"], scrape_cuerpo=False)
+        st.success(f"{len(elegidas)} nota(s) en la canasta"); st.rerun()
+    if generar:
+        if not api_key:
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
+        else:
+            items = [pool[i] for i in elegidas]
+            with st.spinner(f"🔍 Leyendo {len([x for x in items if x['noticia'].get('url')])} nota(s)…"):
+                enr = _cuerpos(items, max_notas=8)
+            ok = sum(1 for x in enr if x["ok"])
+            with st.spinner(f"✦ Escribiendo la nota con {ia_motores.descripcion_cadena(api_key).split(' → ')[0]}… (puede tardar un minuto)"):
+                try:
+                    raw = call_claude(prompt_nota_rapida(tema, enr, estilo, tipo, contexto.strip()), api_key, 6000)
+                    st.session_state[f"{key}_res"] = raw
+                    st.session_state[f"{key}_res_motor"] = ia_motores.ULTIMO.get("nombre", "")
+                    st.session_state[f"{key}_res_ok"] = ok
+                except Exception as e:
+                    st.error(f"No se pudo escribir la nota: {e}")
+    if st.session_state.get(f"{key}_pedido"):
+        mostrar_pedido(st.session_state[f"{key}_pedido"], f"{key}_ped_out", "nota_para_ia")
+    if st.session_state.get(f"{key}_res"):
+        st.divider()
+        mostrar_nota_ia(st.session_state[f"{key}_res"], f"{key}_res", st.session_state.get(f"{key}_res_ok"))
+
 
 def render_news_cards(noticias: list, fuente: dict, resultados: dict, cols_per_row: int = 3):
     """
@@ -274,13 +478,38 @@ with st.sidebar:
         help="Se puede dejar en Secrets de Streamlit (ANTHROPIC_API_KEY). Los feeds cargan sin key.",
     )
 
+    # Motores de IA: los gratuitos primero y Claude de respaldo (ver ia_motores.py)
+    def _secreto(nombre):
+        try:
+            return st.secrets.get(nombre, "")
+        except Exception:
+            return ""
+    with st.expander("🤖 Motores de IA", expanded=not (api_key or any(_secreto(ia_motores.ENV[m]) for m in ia_motores.GRATIS))):
+        _MOTOR_OPC = {"auto": "Automático · gratis", "claude": "Claude primero · pago",
+                      "gemini": "Gemini", "mistral": "Mistral", "groq": "Groq", "openrouter": "OpenRouter"}
+        motor_ia = st.selectbox("Motor", list(_MOTOR_OPC), format_func=lambda m: _MOTOR_OPC[m], key="motor_ia",
+                                help="Automático prueba los gratuitos en orden (Gemini → Mistral → Groq → OpenRouter) y usa Claude solo si fallan todos.")
+        claves_ia = {}
+        for m in ia_motores.GRATIS:
+            claves_ia[m] = st.text_input(f"{ia_motores.NOMBRES[m]} API key (gratis)", type="password",
+                                         value=_secreto(ia_motores.ENV[m]), key=f"clave_{m}",
+                                         help=f"Mejor dejarla en Secrets de Streamlit como {ia_motores.ENV[m]}.")
+        ia_motores.configurar(claves=claves_ia, motor=motor_ia)
+        st.caption(f"Orden: {ia_motores.descripcion_cadena(api_key)}")
+    ia_motores.configurar(claves=claves_ia, motor=motor_ia)
+    # El resto de la app pregunta "if not api_key": con un motor gratuito alcanza
+    if not api_key and ia_motores.hay_motor():
+        api_key = ia_motores.SIN_CLAVE
+
     st.divider()
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        solo_nac = st.checkbox("Solo nacionales", value=False)
-    with col_b:
-        solo_int = st.checkbox("Solo int.", value=False)
+    # Una sola opción a la vez: antes, con las dos casillas tildadas, traía solo los nacionales
+    que_actualizar = st.radio(
+        "Qué actualizar", ["Todo", "Nacionales", "Internacionales"], horizontal=True, key="que_actualizar",
+        help="Todo: nacionales e internacionales. Si elegís uno solo, el otro conserva lo que ya tenía cargado. "
+             "Olé y Primicias se actualizan siempre.")
+    solo_nac = que_actualizar == "Nacionales"
+    solo_int = que_actualizar == "Internacionales"
 
     st.caption(f"⚙️ {CORE_VERSION} · {len(TODAS_FUENTES)} fuentes cargadas")
     if st.button("↺ Actualizar fuentes", type="primary", use_container_width=True):
@@ -372,15 +601,15 @@ with st.sidebar:
             )
 
     st.divider()
-    st.markdown("**IA con Claude**")
+    st.markdown("**IA**")
 
     if st.button("✦ Análisis General", use_container_width=True):
         if not api_key:
-            st.error("Ingresá tu API key")
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
         elif not st.session_state.resultados:
             st.error("Actualizá las fuentes primero")
         else:
-            with st.spinner("Analizando con Claude..."):
+            with st.spinner("Analizando con IA..."):
                 try:
                     prompt = prompt_analisis_general(st.session_state.resultados)
                     st.session_state.analisis_general = call_claude(prompt, api_key, 5000)
@@ -392,7 +621,7 @@ with st.sidebar:
     with _cpn:
         if st.button("🇦🇷 Parte Nac.", use_container_width=True, help="Análisis del fútbol argentino (calidad completa)"):
             if not api_key:
-                st.error("Ingresá tu API key")
+                st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
             elif not st.session_state.resultados:
                 st.error("Actualizá las fuentes primero")
             else:
@@ -407,7 +636,7 @@ with st.sidebar:
     with _cpi:
         if st.button("🌍 Parte Int.", use_container_width=True, help="Análisis del fútbol mundial + impacto argentino (calidad completa)"):
             if not api_key:
-                st.error("Ingresá tu API key")
+                st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
             elif not st.session_state.resultados:
                 st.error("Actualizá las fuentes primero")
             else:
@@ -428,12 +657,12 @@ with st.sidebar:
     _label_ole = "🟢 Ángulos para mis temas" if temas_editor.strip() else "🟢 Informe Olé IA (sugerencias)"
     if st.button(_label_ole, use_container_width=True):
         if not api_key:
-            st.error("Ingresá tu API key")
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
         elif not st.session_state.resultados:
             st.error("Actualizá las fuentes primero")
         else:
             analisis = st.session_state.ole_analisis or analizar_ole_vs_compecencia_safe(st.session_state.resultados)
-            with st.spinner("Buscando ángulos con Claude..."):
+            with st.spinner("Buscando ángulos con IA..."):
                 try:
                     prompt = prompt_informe_ole(st.session_state.resultados, analisis, temas_editor)
                     st.session_state.informe_ole = call_claude(prompt, api_key, 5000)
@@ -457,7 +686,7 @@ ole_analisis = st.session_state.ole_analisis
 tendencias = st.session_state.tendencias
 
 # ─── TABS PRINCIPALES ────────────────────────────────────────────────────────
-tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta, tab_result = st.tabs([
+tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab_ole, tab_tend, tab_ia, tab_nota, tab_sent, tab_canasta, tab_paraia, tab_result = st.tabs([
     "🎯 Agenda",
     "🔎 Buscar",
     f"🇦🇷 Nacionales ({sum(len(resultados.get(f['id'],[])) for f in FUENTES_NAC)})",
@@ -471,6 +700,7 @@ tab_agenda, tab_buscar, tab_nac, tab_int, tab_esp, tab_arg_ext, tab_filtros, tab
     "✍️ Nota Rápida",
     "🌡️ Tono Editorial",
     f"🧺 Canasta ({len(st.session_state.canasta)})",
+    "📤 Para ChatGPT/Claude",
     "📈 Resultados",
 ])
 
@@ -492,9 +722,9 @@ with tab_agenda:
         with col_h2:
             if st.button("✦ Parte editorial (IA)", use_container_width=True):
                 if not api_key:
-                    st.error("Ingresá tu API key en el panel izquierdo")
+                    st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
                 else:
-                    with st.spinner("Redactando el parte con Claude..."):
+                    with st.spinner("Redactando el parte con IA..."):
                         try:
                             st.session_state.agenda_parte = call_claude(
                                 prompt_parte_editorial(agenda), api_key, 1200
@@ -537,12 +767,12 @@ with tab_agenda:
             """, unsafe_allow_html=True)
 
             brief_key = str(hash(it["titulo"]))
-            col_b1, col_b2 = st.columns(2)
+            col_b1, col_b2, col_b3 = st.columns(3)
             with col_b1:
                 if st.button("✦ Brief IA", key=f"agenda_brief_{it['accion']}_{brief_key}",
                              use_container_width=True):
                     if not api_key:
-                        st.error("Ingresá tu API key")
+                        st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
                     else:
                         with st.spinner("Pensando el ángulo..."):
                             try:
@@ -565,9 +795,20 @@ with tab_agenda:
                                   {"id": "agenda", "nombre": "Agenda", "color": color})
                     _canasta_agregar(it["titulo"], it.get("url"), fuente_rep)
                     st.rerun()
+            with col_b3:
+                abierta = st.session_state.get(f"agenda_nota_open_{brief_key}", False)
+                if st.button(("✖ Cerrar" if abierta else f"✍️ Nota ({len(it.get('noticias') or [])})"),
+                             key=f"agenda_nota_{it['accion']}_{brief_key}", use_container_width=True,
+                             disabled=not it.get("noticias"),
+                             help="Elegí varias notas de este tema y convertilas en una nota de Olé"):
+                    st.session_state[f"agenda_nota_open_{brief_key}"] = not abierta
+                    st.rerun()
 
             if st.session_state.agenda_briefs.get(brief_key):
                 st.info(st.session_state.agenda_briefs[brief_key])
+            if st.session_state.get(f"agenda_nota_open_{brief_key}"):
+                with st.container(border=True):
+                    panel_nota_tema(it["titulo"], it.get("noticias"), f"agn_{brief_key}")
 
 # ─── TAB BUSCADOR GLOBAL ─────────────────────────────────────────────────────
 with tab_buscar:
@@ -764,7 +1005,7 @@ with tab_arg_ext:
                 st.code("""Sos analista de medios. Te paso titulares de prensa internacional que mencionan a Argentina (el medio entre corchetes indica el país). Hacé un análisis de sentimiento en español rioplatense: 1) Termómetro general (admiración/respeto/neutro/crítica/burla). 2) Desglose por tema (Selección, Messi, jugadores en Europa, clubes/mercado) con un titular textual de prueba por cada uno. 3) Desglose por país: quién elogia y quién pega. 4) El titular más elogioso y el más hostil. 5) 2-3 ideas de título para un diario deportivo argentino que salgan del análisis.""", language=None)
             if st.button("🌡️ ¿Cómo nos ve el mundo? — análisis de sentimiento (IA)", key="btn_sent_ar"):
                 if not api_key:
-                    st.error("Ingresá tu API key")
+                    st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
                 else:
                     with st.spinner("Leyendo el tono de la prensa internacional..."):
                         try:
@@ -1104,11 +1345,18 @@ with tab_tend:
 
             # ── Botones de acción por card ────────────────────────────────────
             t_idx = lista.index(t)
-            btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 4])
+            btn_col1, btn_col2, btn_col3, _ = st.columns([1, 1, 1, 3])
             with btn_col1:
                 ver_notas = st.button("▸ Ver notas", key=f"vernotas_{t_idx}", use_container_width=True)
             with btn_col2:
                 analizar_tono = st.button("🌡️ Tono", key=f"tono_{t_idx}", use_container_width=True)
+            with btn_col3:
+                if st.button("✍️ Nota", key=f"tend_nota_{t_idx}", use_container_width=True,
+                             help="Elegí varias notas de este tema y convertilas en una nota de Olé"):
+                    st.session_state[f"tend_nota_open_{t_idx}"] = not st.session_state.get(f"tend_nota_open_{t_idx}", False)
+            if st.session_state.get(f"tend_nota_open_{t_idx}", False):
+                with st.container(border=True):
+                    panel_nota_tema(t["titulo"], t["noticias"], f"tdn_{hash(t['titulo'])}")
 
             if ver_notas:
                 st.session_state[f"open_notas_{t_idx}"] = not st.session_state.get(f"open_notas_{t_idx}", False)
@@ -1133,7 +1381,7 @@ with tab_tend:
                 tono_key = f"tono_resultado_{t_idx}"
                 if st.session_state.get(tono_key) is None:
                     if not api_key:
-                        st.warning("Ingresá tu API key en el panel izquierdo para analizar el tono.")
+                        st.warning("Configurá un motor de IA en el panel izquierdo para analizar el tono.")
                     else:
                         with st.spinner("Analizando tono editorial..."):
                             try:
@@ -1214,7 +1462,7 @@ with tab_ia:
                 mime="text/plain",
             )
         else:
-            st.info("Hacé clic en **✦ Análisis General** en el panel izquierdo (requiere API key).")
+            st.info("Hacé clic en **✦ Análisis General** en el panel izquierdo (requiere un motor de IA).")
 
     with ia_partes:
         st.caption("Análisis del día separado por local e internacional, con la misma calidad que el Análisis General.")
@@ -1247,7 +1495,7 @@ with tab_ia:
                 mime="text/plain",
             )
         else:
-            st.info("Hacé clic en **🟢 Informe Olé IA** en el panel izquierdo (requiere API key).")
+            st.info("Hacé clic en **🟢 Informe Olé IA** en el panel izquierdo (requiere un motor de IA).")
 
     with ia3:
         st.markdown(f"**Titulares únicos por tema** — similitud Jaccard < {SIMILITUD_UMBRAL}")
@@ -1474,7 +1722,7 @@ with tab_nota:
         )
         tipo_nota = st.selectbox(
             "Entregable",
-            ["Nota completa", "Solo titulares alternativos", "Esqueleto + ángulos"],
+            ENTREGABLES_NOTA,
             key="nota_tipo",
         )
     with col_nota2b:
@@ -1510,7 +1758,7 @@ with tab_nota:
 
     if generar:
         if not api_key_nota:
-            st.error("Ingresá tu API key en el panel izquierdo para usar la IA.")
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
         elif not tema_elegido and not titulares_seleccionados:
             st.error("Seleccioná al menos una nota o escribí un tema.")
         else:
@@ -1523,7 +1771,7 @@ with tab_nota:
             titulares_enriquecidos = titulares_seleccionados
             if urls_disponibles:
                 with st.spinner(f"🔍 Leyendo el cuerpo de {max_scrape} nota(s) seleccionada(s)..."):
-                    titulares_enriquecidos = scrape_cuerpos_notas(titulares_seleccionados, max_notas=max_scrape)
+                    titulares_enriquecidos = _cuerpos(titulares_seleccionados, max_notas=max_scrape)
                 ok_count = sum(1 for t in titulares_enriquecidos if t.get("ok"))
                 if ok_count > 0:
                     st.success(f"✔ Cuerpo leído en {ok_count}/{max_scrape} notas")
@@ -1533,81 +1781,25 @@ with tab_nota:
                 st.warning("⚠️ Las notas seleccionadas no tienen URL — modo esqueleto seguro")
                 titulares_enriquecidos = [{**t, "cuerpo": "", "ok": False} for t in titulares_seleccionados]
 
-            with st.spinner("✦ Redactando con Claude..."):
+            with st.spinner("✦ Redactando con IA..."):
                 try:
                     prompt = prompt_nota_rapida(tema_elegido, titulares_enriquecidos, estilo_nota, tipo_nota, contexto_extra.strip())
-                    st.session_state.nota_rapida = call_claude(prompt, api_key_nota, 3500)
+                    st.session_state.nota_rapida = call_claude(prompt, api_key_nota, 6000)
+                    st.session_state["nota_rapida_res_motor"] = ia_motores.ULTIMO.get("nombre", "")
                     st.session_state.nota_rapida_titulares = titulares_enriquecidos
                     ok_final = sum(1 for t in titulares_enriquecidos if t.get("ok"))
                     st.session_state.nota_rapida_modo = "con cuerpo completo" if ok_final > 0 else "esqueleto seguro (sin cuerpo)"
                 except Exception as e:
-                    st.error(f"Error al llamar a Claude: {e}")
+                    st.error(f"Error de la IA: {e}")
 
     # ── PASO 4: Resultado ─────────────────────────────────────────────────────
     if st.session_state.nota_rapida:
         modo_badge = st.session_state.get("nota_rapida_modo", "")
-        raw = st.session_state.nota_rapida
-
-        def _split_seccion(texto, encabezado):
-            pattern = rf"════+\s*{re.escape(encabezado)}\s*════+\s*(.*?)(?=════|$)"
-            m = re.search(pattern, texto, re.DOTALL | re.IGNORECASE)
-            return m.group(1).strip() if m else ""
-
-        seccion_nota        = _split_seccion(raw, "NOTA") or _split_seccion(raw, "ESQUELETO DE NOTA")
-        seccion_verificacion = _split_seccion(raw, "TABLA DE VERIFICACIÓN") or _split_seccion(raw, "DATOS CONFIRMADOS.*")
-        seccion_angulos     = _split_seccion(raw, "ÁNGULOS ALTERNATIVOS")
-        sin_secciones = not (seccion_nota or seccion_verificacion)
-
         if "esqueleto" in modo_badge:
-            st.warning("🦴 **Modo esqueleto seguro** — completá los espacios antes de publicar.")
-        elif modo_badge:
-            ok_n = sum(1 for t in st.session_state.nota_rapida_titulares if t.get("ok"))
-            st.info(f"📰 Generado con el cuerpo real de **{ok_n}** nota(s). Revisá la Tabla de Verificación antes de publicar.")
-
-        if sin_secciones:
-            st.markdown("#### 📄 Resultado")
-            nota_editada = st.text_area("", value=raw, height=560, label_visibility="collapsed", key="nota_textarea")
-        else:
-            tab_r1, tab_r2, tab_r3 = st.tabs(["📄 Nota / Esqueleto", "🔍 Tabla de Verificación", "💡 Ángulos Alternativos"])
-
-            with tab_r1:
-                st.caption("Editá el texto antes de copiar o descargar.")
-                nota_editada = st.text_area("", value=seccion_nota, height=480, label_visibility="collapsed", key="nota_textarea")
-                col_dl1, col_dl2 = st.columns(2)
-                with col_dl1:
-                    st.download_button("📥 .txt", nota_editada,
-                        file_name=f"nota_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", mime="text/plain", use_container_width=True)
-                with col_dl2:
-                    st.download_button("📥 .md", nota_editada,
-                        file_name=f"nota_{datetime.now().strftime('%Y%m%d_%H%M')}.md", mime="text/markdown", use_container_width=True)
-
-            with tab_r2:
-                if seccion_verificacion:
-                    for linea in seccion_verificacion.split("\n"):
-                        linea = linea.strip()
-                        if not linea: continue
-                        if "✅" in linea:   color, bg, borde = "#166534", "#f0fdf4", "#86efac"
-                        elif "⚠️" in linea: color, bg, borde = "#92400e", "#fffbeb", "#fcd34d"
-                        elif "❌" in linea:  color, bg, borde = "#991b1b", "#fef2f2", "#fca5a5"
-                        else:               color, bg, borde = "#374151", "#f9fafb", "#e5e7eb"
-                        st.markdown(
-                            f'<div style="padding:7px 12px;margin-bottom:5px;border-radius:6px;'
-                            f'background:{bg};border-left:3px solid {borde};color:{color};font-size:14px">{linea}</div>',
-                            unsafe_allow_html=True)
-                    st.download_button("📥 Tabla .txt", seccion_verificacion,
-                        file_name=f"verificacion_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", mime="text/plain")
-                else:
-                    st.info("No se generó tabla de verificación.")
-
-            with tab_r3:
-                if seccion_angulos:
-                    st.markdown(seccion_angulos)
-                else:
-                    st.info("No se detectaron ángulos alternativos.")
-
-        st.divider()
-        st.download_button("📥 Descargar respuesta completa", raw,
-            file_name=f"nota_completa_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", mime="text/plain")
+            st.warning("🦴 **Modo esqueleto seguro** — no se pudo leer el texto de las notas: completá los espacios antes de publicar.")
+        st.session_state["nota_rapida_res_motor"] = st.session_state.get("nota_rapida_res_motor", "")
+        mostrar_nota_ia(st.session_state.nota_rapida, "nota_rapida_res",
+                        sum(1 for t in st.session_state.nota_rapida_titulares if t.get("ok")))
     else:
         st.info("El borrador aparecerá acá una vez que lo generes.")
 
@@ -1672,7 +1864,7 @@ with tab_sent:
         )
     if analizar_sent:
         if not api_key:
-            st.error("Ingresá tu API key en el panel izquierdo.")
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
         elif not titulares_sent:
             st.error("No hay titulares para analizar.")
         else:
@@ -1769,6 +1961,40 @@ with tab_sent:
             mime="application/json",
         )
 
+# ─── TAB PARA CHATGPT / CLAUDE (gratis, sin API key) ─────────────────────────
+with tab_paraia:
+    st.markdown("### 📤 Informes y notas para ChatGPT o Claude")
+    st.caption("Arma el pedido completo (instrucciones + material) para pegar en ChatGPT, Claude o Gemini. "
+               "Gratis: no usa ninguna API key.")
+    st.markdown("#### 📊 Informes")
+    tipo_inf = st.radio("Tipo de informe", list(para_ia.TIPOS_INFORME), key="pia_tipo",
+                        format_func=lambda k: para_ia.TIPOS_INFORME[k][0], horizontal=True)
+    st.caption(para_ia.TIPOS_INFORME[tipo_inf][1])
+    alc_inf = "todo"
+    if tipo_inf not in ("libre", "exterior"):
+        alc_inf = st.radio("Medios", list(para_ia.ALCANCES), key="pia_alc",
+                           format_func=lambda k: para_ia.ALCANCES[k], horizontal=True)
+    if st.button("📋 Armar el informe", type="primary", key="pia_btn_inf"):
+        st.session_state["pia_informe"] = para_ia.pedido_informe(resultados, tendencias, ole_analisis, tipo_inf, alc_inf)
+        st.session_state["pia_informe_tipo"] = tipo_inf
+    if st.session_state.get("pia_informe"):
+        mostrar_pedido(st.session_state["pia_informe"], "pia_inf_out", f"informe_{st.session_state.get('pia_informe_tipo', 'ia')}")
+
+    st.divider()
+    st.markdown("#### ✍️ Notas")
+    st.caption("Elegí un tema, marcá las notas y tocá **📋 Pedido para ChatGPT/Claude**: se lee el texto de cada nota "
+               "y se arma el pedido para escribir una nota de Olé con control de datos. "
+               "Lo mismo está en el botón **✍️ Nota** de la Agenda y de Tendencias, y en la Canasta.")
+    if not tendencias:
+        st.info("Todavía no hay temas: actualizá las fuentes.")
+    else:
+        opciones_pia = list(range(min(len(tendencias), 40)))
+        idx_pia = st.selectbox("Tema", opciones_pia, key="pia_tema",
+                               format_func=lambda i: f"[{tendencias[i]['cant_medios']} medios{' · sin Olé' if not tendencias[i]['tiene_ole'] else ''}] {tendencias[i]['titulo'][:95]}")
+        with st.container(border=True):
+            panel_nota_tema(tendencias[idx_pia]["titulo"], tendencias[idx_pia]["noticias"], f"pia_{hash(tendencias[idx_pia]['titulo'])}")
+
+
 # ─── TAB CANASTA ─────────────────────────────────────────────────────────────
 with tab_canasta:
     st.markdown("### 🧺 Canasta de notas")
@@ -1847,7 +2073,7 @@ with tab_canasta:
                         col_re_scr, _ = st.columns([2, 4])
                         with col_re_scr:
                             if st.button("🔄 Re-scrapear", key=f"canasta_rescrap_{idx}"):
-                                nuevo_cuerpo = _extraer_cuerpo_nota(n["url"], max_chars=1800)
+                                nuevo_cuerpo = _extraer_cuerpo_nota(n["url"], max_chars=2500)
                                 st.session_state.canasta[idx]["cuerpo"] = nuevo_cuerpo
                                 st.rerun()
                 else:
@@ -1857,7 +2083,7 @@ with tab_canasta:
                         with col_scr:
                             if st.button("📄 Leer cuerpo", key=f"canasta_leer_{idx}"):
                                 with st.spinner("Leyendo nota..."):
-                                    cuerpo_nuevo = _extraer_cuerpo_nota(n["url"], max_chars=1800)
+                                    cuerpo_nuevo = _extraer_cuerpo_nota(n["url"], max_chars=2500)
                                 st.session_state.canasta[idx]["cuerpo"] = cuerpo_nuevo
                                 st.rerun()
 
@@ -1879,7 +2105,7 @@ with tab_canasta:
 
         # ── Enviar canasta a la IA ─────────────────────────────────────────────
         st.markdown("#### ✦ Procesar con IA")
-        st.caption("Usá las notas de la canasta como fuente para generar una nota con Claude.")
+        st.caption("Usá las notas de la canasta como fuente para generar una nota con IA.")
 
         col_ai1, col_ai2 = st.columns([3, 1])
         with col_ai1:
@@ -1897,7 +2123,7 @@ with tab_canasta:
 
         tipo_canasta = st.selectbox(
             "Entregable",
-            ["Nota completa", "Solo titulares alternativos", "Esqueleto + ángulos"],
+            ENTREGABLES_NOTA,
             key="canasta_tipo_ia",
         )
 
@@ -1908,7 +2134,17 @@ with tab_canasta:
             key="canasta_contexto_ia",
         )
 
-        col_gen_c1, col_gen_c2, _ = st.columns([1, 1, 2])
+        col_gen_c1, col_gen_c2, col_gen_c3 = st.columns([1, 1, 2])
+        with col_gen_c3:
+            if st.button("📋 Pedido para ChatGPT/Claude (gratis)", use_container_width=True, key="canasta_btn_pedido",
+                         disabled=not bool(canasta)):
+                items_c = [{"fuente": c["fuente"], "noticia": c["noticia"], "cuerpo": c.get("cuerpo", "")} for c in canasta]
+                with st.spinner("🔍 Leyendo las notas que faltan…"):
+                    enr_c = _cuerpos([c for c in items_c if not c["cuerpo"]], max_notas=8)
+                enr_c = [{**c, "ok": True} for c in items_c if c["cuerpo"]] + enr_c
+                st.session_state["canasta_pedido"] = prompt_nota_rapida(
+                    tema_canasta.strip() or canasta[0]["noticia"]["titulo"], enr_c,
+                    estilo_canasta, tipo_canasta, contexto_canasta.strip())
         with col_gen_c1:
             generar_canasta = st.button(
                 "✦ Generar con IA",
@@ -1924,7 +2160,7 @@ with tab_canasta:
 
         if generar_canasta:
             if not api_key:
-                st.error("Ingresá tu API key en el panel izquierdo.")
+                st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
             else:
                 tema_final = tema_canasta.strip() or canasta[0]["noticia"]["titulo"]
 
@@ -1953,7 +2189,7 @@ with tab_canasta:
                 if sin_cuerpo:
                     max_extra = min(6, len(sin_cuerpo))
                     with st.spinner(f"🔍 Leyendo {max_extra} nota(s) sin cuerpo..."):
-                        enriquecidos_extra = scrape_cuerpos_notas(sin_cuerpo, max_notas=max_extra)
+                        enriquecidos_extra = _cuerpos(sin_cuerpo, max_notas=max_extra)
                     # Actualizar canasta con los cuerpos recién scrapeados
                     for enr in enriquecidos_extra:
                         titulo_enr = enr["noticia"]["titulo"]
@@ -1969,47 +2205,27 @@ with tab_canasta:
                 else:
                     st.warning("⚠️ No se pudo leer el cuerpo — modo esqueleto seguro")
 
-                with st.spinner("✦ Generando nota con Claude..."):
+                with st.spinner("✦ Generando nota con IA..."):
                     try:
                         prompt = prompt_nota_rapida(
                             tema_final, titulares_enr,
                             estilo_canasta, tipo_canasta, contexto_canasta
                         )
-                        raw = call_claude(prompt, api_key, 3000)
+                        raw = call_claude(prompt, api_key, 6000)
                         st.session_state["canasta_borrador"] = raw
+                        st.session_state["canasta_res_motor"] = ia_motores.ULTIMO.get("nombre", "")
                     except Exception as e:
                         st.error(f"Error: {e}")
+
+        if st.session_state.get("canasta_pedido"):
+            mostrar_pedido(st.session_state["canasta_pedido"], "canasta_ped_out", "nota_canasta_para_ia")
 
         # ── Mostrar borrador de canasta ───────────────────────────────────────
         if st.session_state.get("canasta_borrador"):
             st.divider()
             st.markdown("#### Borrador generado")
-            raw = st.session_state["canasta_borrador"]
-            secciones = re.split(r"[═=]{10,}", raw)
-            if len(secciones) > 1:
-                for sec in secciones:
-                    sec = sec.strip()
-                    if not sec:
-                        continue
-                    if "\n" in sec and len(sec.split("\n")[0]) < 50:
-                        titulo_sec = sec.split("\n")[0].strip()
-                        cuerpo_sec = "\n".join(sec.split("\n")[1:]).strip()
-                        st.markdown(f"##### {titulo_sec}")
-                        if cuerpo_sec:
-                            st.markdown(cuerpo_sec)
-                    else:
-                        st.markdown(sec)
-            else:
-                st.markdown(raw)
-
-            st.divider()
-            st.download_button(
-                "📥 Descargar nota",
-                raw,
-                file_name=f"nota_canasta_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                mime="text/plain",
-                key="canasta_download_nota",
-            )
+            mostrar_nota_ia(st.session_state["canasta_borrador"], "canasta_res",
+                            sum(1 for c in st.session_state.canasta if c.get("cuerpo")))
 
 
 
@@ -2128,7 +2344,7 @@ with tab_result:
     st.caption("Lee todas las métricas acumuladas en la planilla y busca patrones: qué entidades y secciones rinden, precisión del panorama, y recomendaciones. Mejora solo a medida que cargás más reportes.")
     if st.button("Generar informe de patrones (IA)", key="btn_patrones"):
         if not api_key:
-            st.error("Ingresá tu API key")
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
         elif not sheets_memoria.disponible():
             st.error("Sin conexión con la planilla")
         else:
@@ -2212,7 +2428,7 @@ MUESTRA DE NOTAS QUE NO FUNCIONARON:
     st.caption("Qué tipo de periodismo publicó Olé hoy y con qué calidad. Una sola llamada de IA sobre los títulos del panorama de Olé — centavos.")
     if st.button("Analizar el mix editorial de hoy", key="btn_termo"):
         if not api_key:
-            st.error("Ingresá tu API key")
+            st.error("Configurá un motor de IA en el panel izquierdo (🤖 Motores de IA).")
         elif not st.session_state.resultados:
             st.error("Actualizá las fuentes primero")
         else:

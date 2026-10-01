@@ -87,10 +87,13 @@ def main():
     if not mem.disponible():
         print("Sin planilla configurada; el informe necesita el Historial. Abortando.")
         sys.exit(1)
+    import ia_motores
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        print("Falta el secret ANTHROPIC_API_KEY en GitHub. Abortando.")
+    if not ia_motores.hay_motor(api_key):
+        print("Falta una clave de IA en los secrets de GitHub (GEMINI_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY, "
+              "OPENROUTER_API_KEY o ANTHROPIC_API_KEY). Abortando.")
         sys.exit(1)
+    print(f"   motores de IA: {ia_motores.descripcion_cadena(api_key)}")
 
     monitor_core.CRITERIOS_EDITOR = mem.leer_config().get("criterios", "")
     print(f"1) Leyendo Historial de los últimos {DIAS} días...")
@@ -105,7 +108,7 @@ def main():
     temas = condensar(historial)
     print(f"   {len(temas)} temas únicos")
 
-    print("3) Pidiendo el análisis a Claude...")
+    print("3) Pidiendo el análisis a la IA...")
     informe = call_claude(prompt_informe(temas), api_key, max_tokens=3000)
     print(f"   informe de {len(informe)} caracteres")
 
