@@ -269,6 +269,78 @@ def mostrar_nota_ia(raw: str, key: str, cant_con_texto: int = None):
                        file_name=f"nota_completa_{datetime.now().strftime('%Y%m%d_%H%M')}.txt", mime="text/plain")
 
 
+# ─── MOTORES: opciones para elegir ───────────────────────────────────────────
+def opciones_motor(anthropic_key: str = "") -> list:
+    """Los motores que se pueden elegir: solo los que tienen clave."""
+    disp = ia_motores.disponibles(anthropic_key if anthropic_key != ia_motores.SIN_CLAVE else "")
+    libres = [m for m in disp if m != "claude"]
+    ops = (["auto"] if len(disp) > 1 or not disp else []) + (["claude"] if "claude" in disp else []) + libres
+    return ops or ["auto"]
+
+
+def nombre_motor(m: str) -> str:
+    return {"auto": "Automático · gratis primero", "claude": "Claude primero · pago"}.get(m, f"{ia_motores.NOMBRES.get(m, m)} · gratis")
+
+
+# ─── LISTAS PARA TILDAR: marcar notas y mandarlas a la canasta o a la IA ──────
+def _id_nota(it: dict) -> str:
+    return str(abs(hash((it["fuente"]["id"], it["noticia"].get("url") or it["noticia"]["titulo"]))))
+
+
+def lista_marcable(items: list, key: str, tema: str = "", agrupar: bool = True) -> list:
+    """Lista de notas con casillas: tildás y destildás, y con las marcadas las mandás a la canasta
+    o armás el informe / la nota. Devuelve las marcadas."""
+    if not items:
+        return []
+    cks = {f"{key}_ck_{_id_nota(it)}": it for it in items}
+    a1, a2, a3 = st.columns(3)
+    if a1.button("☑ Marcar todas", key=f"{key}_todas", use_container_width=True):
+        for k in cks: st.session_state[k] = True
+        st.rerun()
+    if a2.button("☐ Desmarcar", key=f"{key}_ninguna", use_container_width=True):
+        for k in cks: st.session_state[k] = False
+        st.rerun()
+    marcadas = [it for k, it in cks.items() if st.session_state.get(k)]
+    if a3.button(f"🧺 Canasta ({len(marcadas)})", key=f"{key}_acanasta", use_container_width=True,
+                 disabled=not marcadas, type="primary" if marcadas else "secondary"):
+        for it in marcadas:
+            _canasta_agregar(it["noticia"]["titulo"], it["noticia"].get("url"), it["fuente"], scrape_cuerpo=False)
+        for k in cks:
+            if st.session_state.get(k): st.session_state[k] = False
+        st.session_state[f"{key}_ok"] = f"🧺 {len(marcadas)} nota(s) en la canasta. Están en la pestaña 🧺 Canasta."
+        st.rerun()
+    if st.session_state.get(f"{key}_ok"):
+        st.success(st.session_state.pop(f"{key}_ok"))
+    if marcadas:
+        with st.container(border=True):
+            st.markdown(f"**{len(marcadas)} marcada(s)** · también podés armar con ellas el informe del tema o la nota "
+                        "(para ChatGPT/Claude o con la IA de la app):")
+            if st.toggle("✍️ Usar las marcadas", key=f"{key}_usar"):
+                firma = abs(hash(tuple(sorted(_id_nota(m) for m in marcadas))))
+                if len(marcadas) > 8:
+                    st.caption("Para la IA se usan hasta 8 notas: quedan las primeras 8, podés cambiarlas.")
+                panel_nota_tema(tema or marcadas[0]["noticia"]["titulo"], marcadas, f"{key}_p{firma}",
+                                preseleccion=list(range(min(8, len(marcadas)))))
+    en_canasta = {c["noticia"]["titulo"] for c in st.session_state.canasta}
+    medio_actual = None
+    for k, it in cks.items():
+        f, n = it["fuente"], it["noticia"]
+        if agrupar and f["id"] != medio_actual:
+            medio_actual = f["id"]
+            cant = sum(1 for x in items if x["fuente"]["id"] == f["id"])
+            st.markdown(f'<div style="margin-top:8px"><span style="color:{f["color"]};font-weight:700">● {f["nombre"]}</span> '
+                        f'<span style="color:#657786;font-size:12px">({cant})</span></div>', unsafe_allow_html=True)
+        # El título va en la misma casilla: así en el celular queda todo en una línea
+        limpio = re.sub(r"([\\`*_\[\]<>#|~])", r"\\\1", n["titulo"])
+        etiqueta = ("" if agrupar else f"**{f['nombre']}** · ") + limpio
+        if n.get("url"):
+            etiqueta += f" [↗]({n['url']})"
+        if n["titulo"] in en_canasta:
+            etiqueta += " :green[✓ en canasta]"
+        st.checkbox(etiqueta, key=k)
+    return marcadas
+
+
 def mostrar_pedido(texto: str, key: str, archivo: str = "pedido_para_ia"):
     """Un pedido listo para llevar a ChatGPT, Claude o Gemini: copiar, descargar y abrir."""
     palabras = len(texto.split())
@@ -300,7 +372,7 @@ def _elegir_notas(noticias: list, maximo: int = 5) -> list:
     return sorted(out)
 
 
-def panel_nota_tema(tema: str, noticias: list, key: str):
+def panel_nota_tema(tema: str, noticias: list, key: str, preseleccion: list = None):
     """Tema caliente → elegir varias notas → una nota de Olé. Todo en el mismo lugar."""
     noticias = list(noticias or [])
     extra = st.session_state.setdefault(f"{key}_extra", [])
@@ -313,7 +385,7 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
     etiquetas = [f"{n['fuente']['nombre']} · {n['noticia']['titulo'][:95]}" for n in pool]
     sel_key = f"{key}_sel"
     if sel_key not in st.session_state:
-        st.session_state[sel_key] = _elegir_notas(pool)
+        st.session_state[sel_key] = preseleccion[:8] if preseleccion is not None else _elegir_notas(pool)
     pend = st.session_state.pop(f"{key}_pend", None)      # nota sumada desde la búsqueda
     if pend is not None and pend not in st.session_state[sel_key] and len(st.session_state[sel_key]) < 8:
         st.session_state[sel_key] = list(st.session_state[sel_key]) + [pend]
@@ -343,6 +415,11 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
     c4, c5 = st.columns(2)
     estilo = c4.selectbox("Estilo", ESTILOS_NOTA, key=f"{key}_estilo")
     tipo = c5.selectbox("Qué querés", ENTREGABLES_NOTA, key=f"{key}_tipo")
+    ops_m = opciones_motor(api_key)
+    if st.session_state.get(f"{key}_motor") not in ops_m:
+        st.session_state[f"{key}_motor"] = st.session_state.get("motor_ia") if st.session_state.get("motor_ia") in ops_m else ops_m[0]
+    motor_p = st.selectbox("🤖 Motor para escribir acá", ops_m, format_func=nombre_motor, key=f"{key}_motor",
+                           help="Solo para el botón ✦ Escribir. Los pedidos para ChatGPT/Claude no usan motor.")
     contexto = st.text_area("Lo que sabés vos (opcional)", key=f"{key}_ctx", height=70,
                             placeholder="Un dato propio, una declaración que tenés, el ángulo que querés…")
     c6, c8, c9, c7 = st.columns([2, 2, 2, 1])
@@ -372,6 +449,8 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
             with st.spinner(f"🔍 Leyendo {len([x for x in items if x['noticia'].get('url')])} nota(s)…"):
                 enr = _cuerpos(items, max_notas=8)
             ok = sum(1 for x in enr if x["ok"])
+            motor_barra = st.session_state.get("motor_ia", "auto")
+            ia_motores.configurar(motor=motor_p)
             with st.spinner(f"✦ Escribiendo la nota con {ia_motores.descripcion_cadena(api_key).split(' → ')[0]}… (puede tardar un minuto)"):
                 try:
                     raw = call_claude(prompt_nota_rapida(tema, enr, estilo, tipo, contexto.strip()), api_key, 6000)
@@ -380,6 +459,8 @@ def panel_nota_tema(tema: str, noticias: list, key: str):
                     st.session_state[f"{key}_res_ok"] = ok
                 except Exception as e:
                     st.error(f"No se pudo escribir la nota: {e}")
+                finally:
+                    ia_motores.configurar(motor=motor_barra)
     if st.session_state.get(f"{key}_pedido"):
         mostrar_pedido(st.session_state[f"{key}_pedido"], f"{key}_ped_out", "nota_para_ia")
     if st.session_state.get(f"{key}_res"):
@@ -405,16 +486,9 @@ def buscador_medios(fuentes: list, key: str, etiqueta: str, mostrar_vacio: bool 
     if not pool:
         st.warning(f"Nada con “{q.strip()}” en los medios {etiqueta}. Probá con otra palabra o con menos letras.")
         return True
-    st.success(f"**{len(pool)}** notas con “{q.strip()}” en **{len(por_medio)}** medios {etiqueta}.")
-    with st.container(border=True):
-        st.markdown("**✍️ Usar estas notas**: informe del tema o nota (para ChatGPT/Claude o con la IA de la app) y canasta.")
-        if st.toggle("Abrir", key=f"{key}_usar"):
-            panel_nota_tema(q.strip(), pool[:60], f"{key}_{hash(q.strip().lower())}")
-    for f, hits in por_medio:
-        st.markdown(f'<div style="margin-top:10px"><span style="color:{f["color"]};font-weight:700">● {f["nombre"]}</span> '
-                    f'<span style="color:#657786;font-size:12px">({len(hits)})</span></div>', unsafe_allow_html=True)
-        for n in hits:
-            st.markdown(f'&nbsp;&nbsp;• [{n["titulo"]}]({n["url"]})' if n.get("url") else f'&nbsp;&nbsp;• {n["titulo"]}')
+    st.success(f"**{len(pool)}** notas con “{q.strip()}” en **{len(por_medio)}** medios {etiqueta}. "
+               "Tildá las que quieras y mandalas a la canasta o usalas para un informe o una nota.")
+    lista_marcable(pool, f"{key}_{abs(hash(q.strip().lower()))}", tema=q.strip())
     return True
 
 
@@ -542,18 +616,26 @@ with st.sidebar:
             return st.secrets.get(nombre, "")
         except Exception:
             return ""
-    with st.expander("🤖 Motores de IA", expanded=not (api_key or any(_secreto(ia_motores.ENV[m]) for m in ia_motores.GRATIS))):
-        _MOTOR_OPC = {"auto": "Automático · gratis", "claude": "Claude primero · pago",
-                      "gemini": "Gemini", "mistral": "Mistral", "groq": "Groq", "openrouter": "OpenRouter"}
-        motor_ia = st.selectbox("Motor", list(_MOTOR_OPC), format_func=lambda m: _MOTOR_OPC[m], key="motor_ia",
-                                help="Automático prueba los gratuitos en orden (Gemini → Mistral → Groq → OpenRouter) y usa Claude solo si fallan todos.")
-        claves_ia = {}
+    # Qué motores tienen clave (de los Secrets o de lo que se pegó abajo en esta sesión)
+    claves_ia = {m: (st.session_state.get(f"clave_{m}") if f"clave_{m}" in st.session_state else _secreto(ia_motores.ENV[m])) or ""
+                 for m in ia_motores.GRATIS}
+    ia_motores.configurar(claves=claves_ia)
+    _ops_motor = opciones_motor(api_key)
+    if st.session_state.get("motor_ia") not in _ops_motor:
+        st.session_state["motor_ia"] = _ops_motor[0]
+    motor_ia = st.selectbox(
+        "🤖 Motor de IA", _ops_motor, format_func=nombre_motor, key="motor_ia",
+        help="Automático: prueba los gratuitos en orden y usa Claude solo si fallan todos. "
+             "Claude primero: empieza por Claude (pago). O elegí uno en particular. "
+             "Solo aparecen los motores que tienen su clave cargada.")
+    ia_motores.configurar(motor=motor_ia)
+    st.caption(f"Orden: {ia_motores.descripcion_cadena(api_key)}")
+    with st.expander("🔑 Claves de los motores gratis"):
         for m in ia_motores.GRATIS:
             claves_ia[m] = st.text_input(f"{ia_motores.NOMBRES[m]} API key (gratis)", type="password",
-                                         value=_secreto(ia_motores.ENV[m]), key=f"clave_{m}",
+                                         value=claves_ia[m], key=f"clave_{m}",
                                          help=f"Mejor dejarla en Secrets de Streamlit como {ia_motores.ENV[m]}.")
-        ia_motores.configurar(claves=claves_ia, motor=motor_ia)
-        st.caption(f"Orden: {ia_motores.descripcion_cadena(api_key)}")
+        st.caption("Con una clave alcanza. Después de pegar una, el motor aparece en la lista de arriba.")
     ia_motores.configurar(claves=claves_ia, motor=motor_ia)
     # El resto de la app pregunta "if not api_key": con un motor gratuito alcanza
     if not api_key and ia_motores.hay_motor():
@@ -734,6 +816,8 @@ with st.sidebar:
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 st.title("📡 Monitor Deportivo Pro")
+st.caption(f"🤖 IA: **{nombre_motor(st.session_state.get('motor_ia', 'auto'))}** ({ia_motores.descripcion_cadena(api_key)}) "
+           "· se cambia en la barra lateral, en *🤖 Motor de IA*, o en cada nota antes de escribir.")
 
 if not st.session_state.resultados:
     st.info("👈 Hacé clic en **↺ Actualizar fuentes** en el panel izquierdo para comenzar.")
@@ -1390,16 +1474,8 @@ with tab_tend:
                     st.session_state[f"tono_resultado_{t_idx}"] = None  # reset para nueva búsqueda
 
             if st.session_state.get(f"open_notas_{t_idx}", False):
-                with st.container():
-                    for item in t["noticias"]:
-                        n, f = item["noticia"], item["fuente"]
-                        badge = (f'<span style="color:{f["color"]};font-size:10px;font-weight:700;'
-                                 f'background:{f["color"]}18;padding:1px 6px;border-radius:3px">'
-                                 f'{f["nombre"]}</span>')
-                        if n.get("url"):
-                            st.markdown(f'{badge} [{n["titulo"]}]({n["url"]})', unsafe_allow_html=True)
-                        else:
-                            st.markdown(f'{badge} {n["titulo"]}', unsafe_allow_html=True)
+                with st.container(border=True):
+                    lista_marcable(t["noticias"], f"tdv_{abs(hash(t['titulo']))}", tema=t["titulo"], agrupar=False)
 
             if st.session_state.get(f"open_tono_{t_idx}", False):
                 tono_key = f"tono_resultado_{t_idx}"

@@ -1371,7 +1371,7 @@ def _extraer_imagen_rss_item(item_raw: str) -> str:
 
     return ""
 
-CORE_VERSION = "núcleo v30 · buscador en todos los medios + 30 temas"
+CORE_VERSION = "núcleo v31 · elegir motor y tildar notas"
 MAX_ANTIGUEDAD_HORAS = 48  # notas de RSS/Google News más viejas que esto se descartan
 
 
