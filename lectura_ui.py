@@ -59,7 +59,9 @@ def render(resultados: dict, api_key: str = ""):
                "Lo mismo que manda el aviso de Telegram, pero a demanda.")
 
     c1, c2, c3 = st.columns([1.3, 1, 1.4])
-    leer = c1.button("📰 Leer la home ahora", type="primary", key="lect_leer")
+    leer = c1.button("🗞️ Leer el día y la home", type="primary", key="lect_leer")
+    con_ia = c1.checkbox("Con IA (resumen del día y cruce fino)", value=True, key="lect_con_ia",
+                         help="Sin IA el cruce es por palabras y puede marcar faltantes que la home sí tiene")
     excluir = c3.text_input("Excluir títulos con", value=ss.get("lect_excluir", lectura.excluir_de_config()),
                             key="lect_excluir",
                             help="Keywords separadas por coma. Ej: olé summit, brand studio, suramericanos")
@@ -86,9 +88,16 @@ def render(resultados: dict, api_key: str = ""):
                     extra = sheets_memoria.leer_config().get("entidades_extra", "")
                 except Exception:
                     pass
-            with st.spinner("Cruzando con la competencia..."):
-                a = lectura.analizar_home(home, resultados, monitor_core.dic_entidades(extra))
-            ss.lect_home, ss.lect_fuera, ss.lect_a, ss.lect_ia = home, fuera, a, ""
+            dic = monitor_core.dic_entidades(extra)
+            if con_ia:
+                with st.spinner("La IA está leyendo el día y la home (30-60 segundos)..."):
+                    a = lectura.leer_todo(home, resultados, dic, api_key=api_key or "")
+                if not a.get("leido_por_ia"):
+                    st.warning("La IA no respondió bien: muestro el cruce por palabras, que puede traer falsos positivos.")
+            else:
+                a = lectura.analizar_home(home, resultados, dic)
+                a.update({"resumen": [], "errores": [], "lectura": "", "leido_por_ia": False})
+            ss.lect_home, ss.lect_fuera, ss.lect_a = home, fuera, a
         except Exception as e:
             st.error(f"No pude leer la home: {str(e)[:150]}. Probá con 'Pegar la home'.")
             return
@@ -105,6 +114,16 @@ def render(resultados: dict, api_key: str = ""):
         st.warning(f"Sólo hay {a['medios_ok']} medios nacionales cargados: los números son poco confiables. "
                    "Actualizá las fuentes antes de leer.")
 
+    if a.get("resumen"):
+        st.subheader("🗞️ El día")
+        for r in a["resumen"]:
+            marca = f"✅ en la home ({r['ole']})" if r["ole_pos"] else "❌ **no está en la home**"
+            st.markdown(f"- {r['linea']} · _{r['n_nac']} medios nacionales_ · {marca}")
+        st.divider()
+
+    st.subheader("📰 La home de Olé")
+    if a.get("lectura"):
+        st.info(a["lectura"])
     m = st.columns(5)
     m[0].metric("Cobertura de agenda", f"{a['cobertura_pct']}%",
                 help=f"{a['cubiertos']} de {a['temas_agenda']} temas que tienen {lectura.UMBRAL_AGENDA}+ medios nacionales")
@@ -117,36 +136,33 @@ def render(resultados: dict, api_key: str = ""):
                f"{a['medios_ok']} medios nacionales · {a['titulos_nac']} títulos de la competencia · "
                f"desvío de mix en los 3 temas top: {a['desvio_top3']} pts")
 
-    b1, b2, _ = st.columns([1, 1, 2])
-    if b1.button("🤖 Lectura con IA", key="lect_ia_btn"):
-        with st.spinner("Escribiendo la lectura..."):
-            ss.lect_ia = lectura.escribir_lectura(a, home) or "No hay motor de IA disponible."
-    if b2.button("💾 Guardar en la planilla", key="lect_guardar",
+    if st.button("💾 Guardar en la planilla", key="lect_guardar",
                  help="Suma una fila a la pestaña Lectura (la tendencia) y reemplaza Lectura detalle"):
         from datetime import datetime
         try:
-            ok = lectura.guardar_planilla(a, home, ss.get("lect_ia", ""), datetime.now(lectura._TZ_AR))
+            ok = lectura.guardar_planilla(a, home, a.get("lectura", ""), datetime.now(lectura._TZ_AR))
             st.success("Guardado.") if ok else st.warning("La planilla no está configurada.")
         except Exception as e:
             st.error(f"No se pudo guardar: {str(e)[:120]}")
-    if ss.get("lect_ia"):
-        st.info(ss.lect_ia)
 
     t1, t2, t3, t4, t5 = st.tabs([
         f"❌ Faltan ({len(a['faltantes'])})",
-        f"⏰ Vencidas y duplicadas ({len(a['vencidas']) + len(a['duplicados'])})",
+        f"⏰ Vencidas, duplicadas y errores ({len(a['vencidas']) + len(a['duplicados']) + len(a.get('errores', []))})",
         f"⬇️ Temas grandes abajo ({len(a['enterrados'])})",
         f"⭐ Voz propia y sin par ({len(a['voz_propia'])})",
         "🏠 Home y mix",
     ])
     with t1:
-        st.caption("Temas que tienen varios medios nacionales y no encontré en la home. "
-                   "Es automático: si la home lo tiene con otras palabras, es falso positivo.")
+        st.caption("Temas que tienen varios medios nacionales y no están en la home. "
+                   + ("Cruce hecho por la IA." if a.get("leido_por_ia")
+                      else "Cruce por palabras: si la home lo tiene con otras palabras, es falso positivo."))
         _tabla(a["faltantes"], {"n_nac": "Nac.", "n_total": "Total", "titulo": "Tema",
                                 "medios": "Medios", "url": "Link"}, link="Link")
     with t2:
         st.markdown("**Posiblemente vencidas** — previas o servicio de algo que ya tiene resultado")
-        _tabla(a["vencidas"], {"posicion": "#", "titulo": "Título en la home", "evidencia": "Ya hay"})
+        _tabla(a["vencidas"], {"posicion": "#", "titulo": "Título en la home", "evidencia": "Por qué"})
+        st.markdown("**Errores en títulos**")
+        _tabla(a.get("errores", []), {"posicion": "#", "titulo": "Título", "error": "Error"})
         st.markdown("**Duplicadas** — títulos casi iguales en la home")
         _tabla(a["duplicados"], {"posicion": "#", "titulo": "Título", "igual_a": "Igual a"})
     with t3:

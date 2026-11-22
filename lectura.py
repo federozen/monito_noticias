@@ -322,6 +322,205 @@ def escribir_lectura(a: dict, home: list) -> str:
         return ""
 
 
+# ─── 3b. EL DÍA + COBERTURA, LEÍDOS POR IA ───────────────────────────────────
+# Las reglas de palabras se equivocan cuando Olé titula distinto ("Arranque de
+# terror para Pochettino" vs "Liverpool goleó al United"). Acá la IA hace el
+# cruce tema por tema, pero sólo puede citar números de tema y de título que le
+# damos: todo lo que devuelve se puede verificar y lo inventado se descarta.
+MAX_TEMAS_IA = 35
+
+
+def temas_del_dia(resultados: dict) -> list:
+    """Temas de la competencia (sin Olé), con al menos 2 medios nacionales
+    o 1 nacional y 5+ en total. Ordenados por peso."""
+    res = {k: v for k, v in resultados.items() if k != "ole"}
+    nombre = {f["id"]: f["nombre"] for f in TODAS_FUENTES}
+    out = []
+    for c in calcular_tendencias(res):
+        nac = sorted({x["fuente"]["id"] for x in c["noticias"]} & NAC_COMPARABLES)
+        if len(nac) >= 2 or (nac and c["cant_medios"] >= 5):
+            vistos, titulos = set(), []
+            for x in c["noticias"]:
+                t = x["noticia"]["titulo"]
+                if t not in vistos and len(titulos) < 4:
+                    vistos.add(t)
+                    titulos.append({"titulo": t, "medio": x["fuente"]["nombre"],
+                                    "url": x["noticia"].get("url") or ""})
+            out.append({"n_nac": len(nac), "n_total": c["cant_medios"], "titulos": titulos,
+                        "nac_ids": nac, "todos_ids": sorted(c["fuente_ids"]),
+                        "medios": ", ".join(nombre.get(i, i) for i in nac),
+                        "url": c.get("url") or ""})
+    out.sort(key=lambda t: (-t["n_nac"], -t["n_total"]))
+    for i, t in enumerate(out[:MAX_TEMAS_IA], 1):
+        t["id"] = i
+    return out[:MAX_TEMAS_IA]
+
+
+def prompt_dia(temas: list, home: list, fecha: str) -> str:
+    bloque_temas = "\n".join(
+        f"T{t['id']} · {t['n_nac']} medios nacionales, {t['n_total']} en total\n"
+        + "\n".join(f"   - [{x['medio']}] {x['titulo']}" for x in t["titulos"])
+        for t in temas)
+    bloque_home = "\n".join(f"H{n['posicion']}. {n['titulo']}" for n in home)
+    return f"""Sos editor jefe de Olé, diario deportivo argentino. Hoy es {fecha}.
+Te paso (A) los temas del día según la competencia, agrupados automáticamente
+(T1 es el más cubierto), y (B) todos los títulos de la home de Olé en orden
+(H1 es la apertura).
+
+(A) TEMAS DE LA COMPETENCIA
+{bloque_temas}
+
+(B) HOME DE OLÉ
+{bloque_home}
+
+Devolvé SOLO un JSON válido, sin texto antes ni después, con esta forma:
+{{
+ "resumen": [{{"temas": [1, 7], "linea": "..."}}],
+ "cobertura": [{{"tema": 1, "home": [3, 17]}}],
+ "vencidas": [{{"home": 23, "motivo": "..."}}],
+ "lectura": "...",
+ "errores": [{{"home": 12, "error": "..."}}]
+}}
+
+Reglas, todas obligatorias:
+1. "resumen": los 8 a 10 temas más importantes del día para un lector argentino,
+   ordenados por importancia (no sólo por cantidad de medios). "temas": TODOS los
+   T que cuentan esa misma historia (el agrupamiento automático a veces la parte
+   en varios: juntalos acá). "linea": qué pasó, en una oración concreta con
+   nombres y resultados que figuren en los títulos. Ignorá ruido (páginas de
+   estadísticas, títulos sin noticia).
+2. "cobertura": para CADA tema T del 1 al {len(temas)}, la lista de títulos H de
+   la home que cuentan ESA MISMA historia, aunque usen otras palabras (un título
+   de Olé sobre el mismo partido, la misma declaración o el mismo hecho cuenta;
+   uno que sólo comparte el club o el jugador pero habla de otra cosa, NO).
+   Lista vacía si la home no la tiene. Revisá la home entera antes de poner [].
+3. "vencidas": títulos H que hablan en futuro o son servicio ("a qué hora",
+   "cómo ver", "va por", "último momento", la formación) de algo que, según los
+   títulos de (A) o de la propia home, YA pasó. "motivo": qué pasó, citando el
+   título que lo prueba. Si no hay prueba en los títulos, no la incluyas. Un
+   partido que se juega más tarde hoy NO está vencido.
+4. "lectura": 3 o 4 oraciones en español rioplatense sobre cómo quedó parada la
+   home frente al día: qué tema importante falta o está mal ubicado (con su H o T),
+   qué se destaca como propio y una recomendación concreta para la próxima
+   actualización. Prohibido lo genérico ("buena cobertura", "seguir así",
+   "diversificar"). Cada afirmación tiene que poder chequearse en los datos.
+5. "errores": errores de tipeo, tildes o palabras faltantes evidentes en los H.
+   Si no hay, [].
+No inventes hechos, números de tema ni de título que no estén arriba."""
+
+
+def _json_de(texto: str):
+    import json
+    if not texto:
+        return None
+    t = texto.strip()
+    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
+    a, b = t.find("{"), t.rfind("}")
+    if a < 0 or b <= a:
+        return None
+    try:
+        return json.loads(t[a:b + 1])
+    except Exception:
+        return None
+
+
+def leer_dia_con_ia(temas: list, home: list, fecha: str, api_key: str = None):
+    """Devuelve el JSON validado de la IA, o None si no hay IA o no respondió bien."""
+    try:
+        import ia_motores
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "") if api_key is None else api_key
+        if not ia_motores.hay_motor(api_key):
+            return None
+        crudo = monitor_core.call_claude(prompt_dia(temas, home, fecha), api_key, max_tokens=4000)
+    except Exception as e:
+        print(f"   IA no disponible: {str(e)[:80]}")
+        return None
+    d = _json_de(crudo)
+    if not isinstance(d, dict):
+        print("   La IA no devolvió un JSON válido.")
+        return None
+    ids_t = {t["id"] for t in temas}
+    ids_h = {n["posicion"] for n in home}
+
+    def _int(x):
+        try:
+            return int(str(x).lstrip("THth"))
+        except Exception:
+            return None
+
+    out = {"resumen": [], "cobertura": {}, "vencidas": [], "errores": [],
+           "lectura": str(d.get("lectura") or "").replace("**", "").strip()}
+    for r in d.get("resumen") or []:
+        if not isinstance(r, dict) or not r.get("linea"):
+            continue
+        crudos = r.get("temas") if isinstance(r.get("temas"), list) else [r.get("tema")]
+        ks = [k for k in (_int(x) for x in crudos) if k in ids_t]
+        if ks:
+            out["resumen"].append({"temas": ks, "linea": str(r["linea"]).strip()})
+    for c in d.get("cobertura") or []:
+        k = _int(c.get("tema")) if isinstance(c, dict) else None
+        if k in ids_t:
+            out["cobertura"][k] = [h for h in (_int(x) for x in (c.get("home") or [])) if h in ids_h]
+    for v in d.get("vencidas") or []:
+        h = _int(v.get("home")) if isinstance(v, dict) else None
+        if h in ids_h:
+            out["vencidas"].append({"home": h, "motivo": str(v.get("motivo") or "").strip()})
+    for e in d.get("errores") or []:
+        h = _int(e.get("home")) if isinstance(e, dict) else None
+        if h in ids_h and e.get("error"):
+            out["errores"].append({"home": h, "error": str(e["error"]).strip()})
+    if len(out["cobertura"]) < len(temas) * 0.6:   # contestó a medias: no confiable
+        print(f"   La IA cubrió sólo {len(out['cobertura'])} de {len(temas)} temas.")
+        return None
+    return out
+
+
+def combinar(a: dict, temas: list, ia: dict, home: list) -> dict:
+    """Pisa faltantes, vencidas y cobertura del análisis por reglas con lo que
+    leyó la IA. Deja el resto (voz propia, commodity, mix, duplicados)."""
+    a = dict(a)
+    tit = {n["posicion"]: n["titulo"] for n in home}
+    por_id = {t["id"]: t for t in temas}
+    es_agenda = lambda t: t["n_nac"] >= UMBRAL_AGENDA or (t["n_nac"] >= 2 and t["n_total"] >= UMBRAL_AGENDA_TOTAL)
+    agenda = [t for t in temas if es_agenda(t)]
+    cub = [t for t in agenda if ia["cobertura"].get(t["id"])]
+    a["temas_agenda"], a["cubiertos"] = len(agenda), len(cub)
+    a["cobertura_pct"] = round(100 * len(cub) / max(len(agenda), 1), 1)
+    a["faltantes"] = [{"titulo": t["titulos"][0]["titulo"], "url": t["titulos"][0]["url"] or t["url"],
+                       "n_nac": t["n_nac"], "n_total": t["n_total"], "medios": t["medios"]}
+                      for t in agenda if not ia["cobertura"].get(t["id"])]
+    a["vencidas"] = [{"titulo": tit[v["home"]], "posicion": v["home"], "evidencia": v["motivo"]}
+                     for v in ia["vencidas"]]
+    a["enterrados"] = []
+    for t in agenda:
+        hs = ia["cobertura"].get(t["id"]) or []
+        if t["n_nac"] >= UMBRAL_COMMODITY and hs and min(hs) > ZONA_SCROLL:
+            a["enterrados"].append({"titulo": tit[min(hs)], "posicion": min(hs), "n_nac": t["n_nac"]})
+    a["resumen"] = []
+    for r in ia["resumen"]:
+        ts = [por_id[k] for k in r["temas"]]
+        nac = set().union(*[set(t["nac_ids"]) for t in ts])
+        tot = set().union(*[set(t["todos_ids"]) for t in ts])
+        hs = sorted({h for t in ts for h in (ia["cobertura"].get(t["id"]) or [])})
+        a["resumen"].append({"linea": r["linea"], "n_nac": len(nac), "n_total": len(tot),
+                             "ole": f"H{hs[0]}" if hs else "no está", "ole_pos": hs[0] if hs else None,
+                             "url": ts[0]["titulos"][0]["url"] or ts[0]["url"]})
+    a["errores"] = [{"posicion": e["home"], "titulo": tit[e["home"]], "error": e["error"]} for e in ia["errores"]]
+    a["lectura"] = ia["lectura"]
+    a["leido_por_ia"] = True
+    return a
+
+
+def leer_todo(home: list, resultados: dict, dic: dict = None, api_key: str = None,
+              fecha: str = "") -> dict:
+    """Análisis completo: reglas + IA (si hay). Lo usan GitHub y el Streamlit."""
+    a = analizar_home(home, resultados, dic)
+    a.update({"resumen": [], "errores": [], "lectura": "", "leido_por_ia": False})
+    temas = temas_del_dia(resultados)
+    ia = leer_dia_con_ia(temas, home, fecha or datetime.now(_TZ_AR).strftime("%d/%m/%Y"), api_key)
+    return combinar(a, temas, ia, home) if ia else a
+
+
 # ─── 4. SALIDAS: planilla y Telegram ─────────────────────────────────────────
 LECTURA_HEADERS = ["Fecha", "Hora", "NotasHome", "MediosNac", "TemasAgenda", "Cubiertos",
                    "Cobertura%", "Faltantes", "Enterrados", "VozPropia", "SinPar",
@@ -340,6 +539,8 @@ def guardar_planilla(a: dict, home: list, lectura: str, ahora: datetime) -> bool
     mem._ws("Lectura", LECTURA_HEADERS).append_row([str(x) for x in fila], value_input_option="USER_ENTERED")
 
     filas = [DETALLE_HEADERS]
+    filas += [["Día", r["ole"], r["linea"], r["n_nac"], "", r["url"]] for r in a.get("resumen", [])]
+    filas += [["Error", e["posicion"], e["titulo"], "", e["error"], ""] for e in a.get("errores", [])]
     filas += [["Falta", "", f["titulo"], f["n_nac"], f["medios"], f["url"]] for f in a["faltantes"]]
     filas += [["Enterrado", e["posicion"], e["titulo"], e["n_nac"], "tema grande, ubicado abajo", ""] for e in a["enterrados"]]
     filas += [["Vencida", v["posicion"], v["titulo"], "", f"ya hay: {v['evidencia']}", ""] for v in a["vencidas"]]
@@ -355,25 +556,36 @@ def guardar_planilla(a: dict, home: list, lectura: str, ahora: datetime) -> bool
 
 
 def texto_telegram(a: dict, lectura: str, ahora: datetime, url_planilla: str = "") -> str:
-    l = [f"📰 LECTURA HOME OLÉ · {ahora.strftime('%d/%m %H:%M')}",
-         f"Cobertura de agenda: {a['cobertura_pct']}% (faltan {len(a['faltantes'])} de {a['temas_agenda']})",
-         f"Vencidas: {len(a['vencidas'])} · Duplicados: {len(a['duplicados'])} · Notas en home: {a['notas_home']}",
-         f"Voz propia: {len(a['voz_propia'])} · Sin par en la competencia: {len(a['sin_par'])}",
-         f"Commodity: {a['commodity_pct']}% · Desvío de mix: {a['desvio_top3']} pts", ""]
-    if a["faltantes"] and not lectura:   # con IA, la lista filtrada viene en la lectura
-        l.append("FALTAN (automático, puede traer falsos positivos):")
-        l += [f"· {f['titulo'][:90]} ({f['n_nac']} nac. / {f['n_total']} total)" for f in a["faltantes"][:6]]
+    l = [f"🗞️ EL DÍA · {ahora.strftime('%d/%m %H:%M')}"]
+    if a.get("resumen"):
+        for r in a["resumen"]:
+            marca = f"✅ {r['ole']}" if r["ole_pos"] else "❌ no está en la home"
+            l.append(f"· {r['linea']} ({r['n_nac']} medios) {marca}")
+    else:
+        l.append("(sin IA no hay resumen del día)")
+    l += ["", f"📰 LA HOME DE OLÉ",
+          f"Cobertura de agenda: {a['cobertura_pct']}% (faltan {len(a['faltantes'])} de {a['temas_agenda']})",
+          f"Vencidas: {len(a['vencidas'])} · Duplicados: {len(a['duplicados'])} · Títulos: {a['notas_home']}",
+          f"Voz propia: {len(a['voz_propia'])} · Commodity: {a['commodity_pct']}%", ""]
+    lectura = lectura or a.get("lectura", "")
+    if lectura:
+        l += [lectura, ""]
+    if a["faltantes"]:
+        l.append("FALTAN:" if a.get("leido_por_ia") else "FALTAN (automático, puede traer falsos positivos):")
+        l += [f"· {f['titulo'][:90]} ({f['n_nac']} nac.)" for f in a["faltantes"][:6]]
         l.append("")
     if a["vencidas"]:
         l.append("VENCIDAS:")
-        l += [f"· #{v['posicion']} {v['titulo'][:90]}" for v in a["vencidas"][:5]]
+        l += [f"· H{v['posicion']} {v['titulo'][:70]} → {v['evidencia'][:80]}" for v in a["vencidas"][:5]]
         l.append("")
     if a["enterrados"]:
         l.append("TEMAS GRANDES ABAJO:")
-        l += [f"· #{e['posicion']} {e['titulo'][:90]}" for e in a["enterrados"][:4]]
+        l += [f"· H{e['posicion']} {e['titulo'][:90]}" for e in a["enterrados"][:4]]
         l.append("")
-    if lectura:
-        l += [lectura, ""]
+    if a.get("errores"):
+        l.append("ERRORES EN TÍTULOS:")
+        l += [f"· H{e['posicion']}: {e['error'][:90]}" for e in a["errores"][:5]]
+        l.append("")
     if url_planilla:
         l.append(f"Detalle: {url_planilla}")
     return "\n".join(l)[:3900]
@@ -396,15 +608,15 @@ def main():
     resultados = scrapear_todo()
 
     dic = dic_entidades(mem.leer_config().get("entidades_extra", "") if mem.disponible() else "")
-    a = analizar_home(home, resultados, dic)
-    print(f"3) Cobertura {a['cobertura_pct']}% · faltan {len(a['faltantes'])} · "
+    print("3) Cruzando y leyendo el día con IA...")
+    a = leer_todo(home, resultados, dic, fecha=ahora.strftime("%d/%m/%Y"))
+    print(f"   leído por IA: {'sí' if a['leido_por_ia'] else 'no (sólo reglas)'}")
+    print(f"   Cobertura {a['cobertura_pct']}% · faltan {len(a['faltantes'])} · "
           f"vencidas {len(a['vencidas'])} · duplicados {len(a['duplicados'])}")
     if a["medios_ok"] < 6:
         print(f"   Ojo: sólo respondieron {a['medios_ok']} medios nacionales; los números son poco confiables.")
 
-    print("4) Lectura con IA...")
-    lectura = escribir_lectura(a, home)
-    print("   " + (lectura[:300] or "(sin IA: va sólo con números)"))
+    lectura = a.get("lectura", "")
 
     try:
         ok = guardar_planilla(a, home, lectura, ahora)
