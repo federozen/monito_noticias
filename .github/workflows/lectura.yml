@@ -1,0 +1,34 @@
+name: Lectura de la home
+
+on:
+  workflow_dispatch: {}        # botón "Run workflow" para correrla cuando quieras
+  # Para que corra sola, sacale el # a las dos líneas de abajo (horario en UTC: 17 = 14 h y 2 = 23 h de Argentina)
+  # schedule:
+  #   - cron: "7 17,2 * * *"
+
+concurrency:
+  group: lectura-home
+  cancel-in-progress: false
+
+jobs:
+  lectura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-vigia.txt
+      - name: Leer la home contra la agenda
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python lectura.py
