@@ -1192,11 +1192,19 @@ with tab_ole:
 
         st.divider()
 
-        sub1, sub2, sub3 = st.tabs([
+        sub1, sub2, sub3, sub4 = st.tabs([
             f"⭐ Exclusivos Olé ({len(excl)})",
             f"❌ Faltantes ({len(falt)})",
             f"🔄 Compartidos ({len(comp)})",
+            "📰 Lectura de la home",
         ])
+
+        with sub4:
+            try:
+                import lectura_ui
+                lectura_ui.render(resultados, api_key)
+            except ImportError:
+                st.warning("Para ver la lectura de la home subí **lectura.py** y **lectura_ui.py** a la raíz del repo.")
 
         with sub1:
             if not excl:

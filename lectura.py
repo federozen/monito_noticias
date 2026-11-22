@@ -42,6 +42,9 @@ UMBRAL_MISMO_TEMA = 0.30      # parecido (pesado por rareza) para dar un tema po
 UMBRAL_COMMODITY = 5          # un título es commodity si su tema lo tienen N+ nacionales
 ZONA_APERTURA = 12            # posiciones 1-12 = apertura
 ZONA_SCROLL = 40              # 13-40 = primer scroll; el resto, abajo
+# Títulos de la home que no cuentan como tema editorial (keywords, sin tildes).
+# Se puede pisar desde la planilla, pestaña Config, parámetro "lectura_excluir".
+EXCLUIR_DEFAULT = "ole summit, brand studio"
 # Medios nacionales comparables: los directos, sin Olé ni la cuenta oficial de AFA
 NAC_COMPARABLES = FUENTES_NAC_IDS - {"ole", "afa"}
 
@@ -92,6 +95,31 @@ def scrapear_home_ole() -> list:
         n["posicion"] = i
         n.pop("_orden", None)
     return notas
+
+
+def filtrar_home(home: list, excluir: str = EXCLUIR_DEFAULT) -> tuple:
+    """Saca de la home los títulos con alguna keyword de 'excluir' (separadas
+    por coma). Conserva la posición original en la página. Devuelve (home, sacados)."""
+    claves = [_norm_texto(k.strip()) for k in (excluir or "").split(",") if k.strip()]
+    if not claves:
+        return home, []
+    quedan, fuera = [], []
+    for n in home:
+        (fuera if any(k in _norm_texto(n["titulo"]) for k in claves) else quedan).append(n)
+    return quedan, fuera
+
+
+def excluir_de_config() -> str:
+    try:
+        import sheets_memoria as mem
+        if mem.disponible():
+            filas = mem._ws("Config", ["parametro", "valor", "descripcion"]).get_all_values()
+            for f in filas:
+                if f and f[0].strip() == "lectura_excluir" and len(f) > 1:
+                    return f[1]
+    except Exception:
+        pass
+    return EXCLUIR_DEFAULT
 
 
 def zona(pos: int) -> str:
@@ -358,8 +386,8 @@ def main():
     from vigia import scrapear_todo, enviar_telegram
 
     print("1) Scrapeando la home de Olé completa...")
-    home = scrapear_home_ole()
-    print(f"   {len(home)} notas en la home")
+    home, fuera = filtrar_home(scrapear_home_ole(), excluir_de_config())
+    print(f"   {len(home)} notas en la home ({len(fuera)} excluidas por lectura_excluir)")
     if len(home) < 20:
         print("   Muy pocas notas: probablemente cambió la estructura de la home. Abortando.")
         sys.exit(1)
